@@ -5,6 +5,7 @@ import time
 import tempfile
 import logging
 import httpx
+import random
 from datetime import datetime, timedelta
 from django.utils import timezone
 from django.core.files.base import ContentFile
@@ -46,8 +47,11 @@ def read_file(file_path):
 
 def softmax(preds):
     """Applique softmax à un dictionnaire de prédictions"""
-    exp = {k: math.exp(v) for k, v in preds.items()}
-    total = sum(exp.values())
+    if not preds:
+        return {}
+    m = max(preds.values())
+    exp = {k: math.exp(v - m) for k, v in preds.items()}
+    total = sum(exp.values()) or 1.0
     return {k: v / total for k, v in exp.items()}
 
 
@@ -240,6 +244,28 @@ def transcribe_audio(audio_data, language="fr"):
 
 # ---------- SYSTÈME DE FALLBACK ----------
 
+# Concrétisation paramétrable depuis settings.AI_CONFIG (DRY, pas de doublon)
+try:
+    RETRYABLE_STATUS = set(AI_CONFIG['RETRYABLE_STATUS'])
+    RETRYABLE_KEYWORDS = tuple(AI_CONFIG['RETRYABLE_KEYWORDS'])
+except KeyError as e:
+    logger.error(f"AI_CONFIG manquant: {e}. Règles de retry vides par sécurité.")
+    RETRYABLE_STATUS = set()
+    RETRYABLE_KEYWORDS = tuple()
+
+
+def _extract_status_and_text(e: Exception):
+    status = getattr(e, "status_code", None)
+    body_text = ""
+    resp = getattr(e, "response", None)
+    if resp is not None:
+        status = getattr(resp, "status_code", status)
+        try:
+            body_text = resp.text or ""
+        except Exception:
+            body_text = ""
+    return status, body_text
+
 
 def safe_mistral_call(model, messages, operation="API call"):
     """
@@ -290,20 +316,30 @@ def safe_mistral_call(model, messages, operation="API call"):
             attempt_duration = time.time() - attempt_start
 
             # Erreurs qui nécessitent un fallback
-            if any(
-                keyword in error_msg
-                for keyword in [
+            status_code, body_text = _extract_status_and_text(e)
+            merged_msg = (error_msg + " " + body_text.lower()).strip()
+
+            retryable = (
+                (status_code in RETRYABLE_STATUS) or
+                any(k in merged_msg for k in RETRYABLE_KEYWORDS) or
+                any(k in merged_msg for k in [
                     "insufficient_quota",
                     "quota_exceeded",
                     "rate_limit",
                     "model_not_found",
                     "service_unavailable",
                     "timeout",
-                ]
-            ):
-                if "quota" in error_msg:
+                ])
+            )
+
+            if retryable:
+                base = AI_CONFIG.get('CHAT_RETRY_BASE_DELAY_S', 0.5)
+                maxd = AI_CONFIG.get('CHAT_RETRY_MAX_DELAY_S', 3.0)
+                wait = min(base * (2 ** attempt), maxd) + random.uniform(0, 0.3)
+
+                if "quota" in merged_msg:
                     logger.warning(f"[{operation}] QUOTA ATTEINT - {current_model}")
-                elif "rate_limit" in error_msg:
+                elif "rate_limit" in merged_msg or status_code == 429:
                     logger.warning(f"[{operation}] RATE LIMIT - {current_model}")
                 else:
                     logger.warning(f"[{operation}] Erreur {current_model}: {e}")
@@ -313,6 +349,7 @@ def safe_mistral_call(model, messages, operation="API call"):
                     logger.error(f"[{operation}] Tous les fallbacks échoués après {total_duration:.2f}s")
                     return None
 
+                time.sleep(wait)
                 continue
             else:
                 logger.error(f"[{operation}] Erreur critique {current_model}: {e}")
