@@ -63,3 +63,11 @@ node_modules/
 static/css/tailwind.min.css
 static/css/*.min.css
 static/js/*.min.js
+
+# === DEV TELEMETRY & TRACES (non versionnés) ===
+# Garder le dossier .dev dans le repo, mais ignorer son contenu
+.dev/*
+!.dev/.gitkeep
+# ne pas garder le contenu de dev
+dev_metrics.jsonl
+dev_traces.jsonl

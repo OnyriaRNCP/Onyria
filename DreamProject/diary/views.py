@@ -27,6 +27,9 @@ from .constants import EMOTION_LABELS, DREAM_TYPE_LABELS, DREAM_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
 
+# --- AJOUT: trace par rêve en DEV (historique) ---
+from .metrics.runtime import record_dream_trace  # <- ajout
+
 
 # ----- VUES PRINCIPALES ----- #
 
@@ -203,6 +206,23 @@ def analyse_from_voice(request):
                 logger.warning(f"Analyse SSE lente: {total_duration:.2f}s pour user {request.user.id}")
             
             logger.info(f"Analyse SSE user {request.user.id} réussie - Type: {dream_type}, Émotion: {raw_dominant_key} en {total_duration:.2f}s")
+
+            # --- AJOUT: en DEV, on garde une trace "par rêve" (historique, max 100) ---
+            try:
+                record_dream_trace(
+                    dream_id=dream.id,
+                    user_id=request.user.id,
+                    created_at_ts=float(dream.created_at.timestamp()) if dream.created_at else time.time(),
+                    dream_type=dream_type,
+                    dominant_emotion=raw_dominant_key or "",
+                    has_image=bool(getattr(dream, "image_url", None)),
+                    total_duration_ms=int(total_duration * 1000),
+                    started_at_ts=float(start_time),
+                )
+            except Exception:
+                # on ne veut pas casser le flux SSE si la trace échoue
+                pass
+
             # Succès explicite pour les tests (image peut échouer sans bloquer)
             yield f"data: {json.dumps({'step': 'complete', 'success': True})}\n\n"
 
