@@ -21,7 +21,6 @@ from .utils import (
     get_emotions_timeline_filtered,
     get_themes_stats_filtered,
     get_themes_timeline_filtered,
-    get_theme_distribution_by_emotion,
     format_emotion_label,
     format_dream_type_label,
     transcribe_audio,
@@ -296,15 +295,23 @@ def dream_followup(request):
     emotions_timeline, emotions_list = get_emotions_timeline_filtered(
         request.user, period, start_date, end_date
     )
+    
+    # ✅ HARMONISATION : Récupérer d'abord les stats thématiques (source unique)
     themes_stats = get_themes_stats_filtered(
         request.user, period, start_date, end_date
     )
-    themes_timeline, themes_list = get_themes_timeline_filtered(
-        request.user, period, start_date, end_date
-    )
-    theme_emotion_distribution = get_theme_distribution_by_emotion(
-        request.user, period, start_date, end_date
-    )
+    
+    # ✅ HARMONISATION : Utiliser la liste de thèmes des stats pour la timeline
+    if themes_stats['has_data']:
+        themes_timeline, themes_list = get_themes_timeline_filtered(
+            request.user, period, start_date, end_date
+        )
+        # S'assurer que themes_list correspond à celui des stats
+        themes_list = themes_stats.get('themes_list', themes_list)
+        logger.info(f"Thèmes harmonisés: {len(themes_list)} thèmes cohérents entre graphiques")
+    else:
+        themes_timeline, themes_list = [], []
+        logger.info("Pas de données thématiques - graphiques vides")
     
     # Formatage des émotions avec les labels français
     formatted_emotions_stats = {}
@@ -330,7 +337,7 @@ def dream_followup(request):
     date_range_info = get_date_range_display(period, start_date, end_date)
 
     logger.debug(
-        f"Dashboard user {request.user.id} - {dream_type_stats['total']} rêves"
+        f"Dashboard user {request.user.id} - {dream_type_stats['total']} rêves, {len(themes_list)} thèmes harmonisés"
     )
 
     context = {
@@ -342,12 +349,16 @@ def dream_followup(request):
         'themes_stats': themes_stats,
         'themes_timeline': themes_timeline,
         'themes_list': themes_list,
-        'theme_emotion_distribution': theme_emotion_distribution,
         'has_data': dream_type_stats['total'] > 0,
         'current_period': period,
         'current_start_date': start_date,
         'current_end_date': end_date,
         'date_range_display': date_range_info,
+        'themes_debug': {
+            'method': themes_stats.get('method', 'Aucun'),
+            'total_themes_found': len(themes_stats.get('themes', {})),
+            'has_timeline_data': len(themes_timeline) > 0,
+        } if themes_stats['has_data'] else {}
     }
 
     return render(request, 'diary/dream_followup.html', context)

@@ -726,62 +726,109 @@ except ImportError:
 
 
 def _preprocess_for_analysis(text: str) -> str:
-    """Préprocesse le texte avec spaCy pour analyse thématique"""
+    """Préprocesse le texte avec spaCy pour analyse thématique - version améliorée"""
     if not nlp or not text:
         return _basic_preprocess(text)
 
     text = text.lower()
-    text = re.sub(r'[^\w\s]', ' ', text)
+    # ✅ AMÉLIORATION : Préserver plus de ponctuation contextuelle
+    text = re.sub(r'[^\w\s\'-]', ' ', text)  # Garder apostrophes et tirets
 
     doc = nlp(text)
     significant_tokens = []
 
     for token in doc:
         lemma = token.lemma_.lower()
+        original = token.text.lower()
 
-        # Focus sur les noms principalement + quelques verbes d'action
-        if (
-            token.pos_ in ['NOUN', 'PROPN']
-            or (
-                token.pos_ == 'VERB'
-                and lemma in ['voler', 'tomber', 'courir', 'fuir', 'nager']
-            )
-            or (token.pos_ == 'ADJ' and len(lemma) >= 5)
-        ):
+        # ✅ AMÉLIORATION : Critères de sélection plus inclusifs
+        keep_token = False
+        
+        # Noms et noms propres (priorité)
+        if token.pos_ in ['NOUN', 'PROPN']:
+            keep_token = True
+            
+        # Verbes d'action significatifs (liste étendue)
+        elif token.pos_ == 'VERB' and lemma in [
+            'aller', 'venir', 'partir', 'arriver', 'entrer', 'sortir', 'monter', 'descendre',
+            'voler', 'tomber', 'courir', 'fuir', 'nager', 'marcher', 'conduire', 'voyager',
+            'manger', 'boire', 'dormir', 'rêver', 'jouer', 'travailler', 'étudier', 'apprendre',
+            'rencontrer', 'voir', 'regarder', 'écouter', 'parler', 'dire', 'crier', 'pleurer',
+            'rire', 'aimer', 'détester', 'avoir', 'être', 'faire', 'pouvoir', 'vouloir'
+        ]:
+            keep_token = True
+            
+        # Adjectifs descriptifs importants
+        elif token.pos_ == 'ADJ' and len(lemma) >= 4:
+            keep_token = True
+            
+        # Prépositions et adverbes de lieu/temps utiles
+        elif token.pos_ in ['ADP', 'ADV'] and original in [
+            'chez', 'dans', 'sur', 'sous', 'avec', 'sans', 'pour', 'par', 'vers', 'depuis',
+            'hier', 'aujourd', 'demain', 'maintenant', 'toujours', 'jamais', 'souvent', 'parfois',
+            'ici', 'là', 'partout', 'nulle', 'dehors', 'dedans', 'devant', 'derrière'
+        ]:
+            keep_token = True
 
+        # ✅ FILTRAGE : Conserver seulement les tokens pertinents
+        if keep_token and len(lemma) >= 2:
+            # Utiliser lemma pour la cohérence, mais garder original si plus informatif
+            final_token = lemma
+            
+            # ✅ AMÉLIORATION : Préférer forme originale pour certains cas
             if (
-                len(lemma) >= 3
-                and lemma not in FRENCH_STOPWORDS
-                and lemma not in DREAM_SPECIFIC_STOPWORDS
-                and not lemma.isdigit()
+                original not in FRENCH_STOPWORDS 
+                and original not in DREAM_SPECIFIC_STOPWORDS
+                and not original.isdigit()
                 and token.is_alpha
-                and not any(
-                    reject in lemma
-                    for reject in ['fair', 'avoir', 'être', 'aller']
-                )
+                and len(original) >= 3
             ):
+                # Garder original si différent du lemma et plus expressif
+                if original != lemma and len(original) >= len(lemma):
+                    final_token = original
+                    
+                # Exceptions pour les mots très courts mais importants
+                if len(final_token) >= 2 or final_token in ['je', 'tu', 'il', 'on', 'me', 'te', 'se']:
+                    # Dernière vérification d'exclusion
+                    exclude_patterns = ['fair', 'avoir', 'êtr', 'etr', 'all', 'ven']
+                    if not any(pattern in final_token for pattern in exclude_patterns):
+                        significant_tokens.append(final_token)
 
-                significant_tokens.append(lemma)
+    # ✅ AMÉLIORATION : Déduplication intelligente en gardant la forme la plus informative
+    unique_tokens = []
+    seen_roots = set()
+    
+    for token in significant_tokens:
+        # Créer une forme "racine" pour éviter les doublons proches
+        root = token[:4] if len(token) > 4 else token
+        
+        if root not in seen_roots or len(token) > 4:  # Préférer formes longues
+            unique_tokens.append(token)
+            seen_roots.add(root)
 
-    return ' '.join(significant_tokens)
+    return ' '.join(unique_tokens)
 
 
 def _basic_preprocess(text: str) -> str:
-    """Préprocessing basique sans spaCy"""
+    """Préprocessing basique sans spaCy - version améliorée"""
     if not text:
         return ""
 
     text = text.lower()
-    text = re.sub(r'[^\w\s]', ' ', text)
+    text = re.sub(r'[^\w\s\'-]', ' ', text)  # Garder apostrophes et tirets
     tokens = text.split()
 
     filtered = []
     for token in tokens:
+        # ✅ AMÉLIORATION : Critères plus permissifs pour conserver plus de contexte
         if (
-            len(token) >= 4
+            len(token) >= 3  # Réduire le minimum de 4 à 3 caractères
             and token not in FRENCH_STOPWORDS
             and token not in DREAM_SPECIFIC_STOPWORDS
             and not token.isdigit()
+            and token.isalpha()
+            # Exclusions spécifiques pour éviter les mots parasites
+            and token not in ['avoir', 'être', 'etre', 'faire', 'aller', 'venir', 'dire', 'voir']
         ):
             filtered.append(token)
 
@@ -860,107 +907,282 @@ def _bertopic_analysis(dream_texts: List[str], total_dreams: int):
 
 
 def _category_analysis(dream_texts: List[str], total_dreams: int):
-    """Analyse par catégories prédéfinies pour petits datasets"""
+    """Analyse par catégories prédéfinies pour petits datasets - version améliorée"""
     theme_document_freq = Counter()
+    theme_word_freq = Counter()  # Pour compter la fréquence totale des mots
 
     for dream_text in dream_texts:
         words = _preprocess_for_analysis(dream_text).split()
 
         # Détecter les catégories présentes dans ce rêve
         detected_categories = set()
+        category_word_count = defaultdict(int)
 
         for category, keywords in THEME_CATEGORIES.items():
             for word in words:
                 for keyword in keywords:
-                    if (
-                        word == keyword
-                        or keyword in word
-                        or word in keyword
-                        or (
-                            stemmer
-                            and len(word) > 3
-                            and len(keyword) > 3
-                            and stemmer.stem(word) == stemmer.stem(keyword)
-                        )
-                    ):
+                    match_found = False
+                    
+                    # Différents niveaux de matching
+                    if word == keyword:
+                        match_found = True
+                    elif len(word) >= 4 and len(keyword) >= 4:
+                        # Matching partiel pour mots longs
+                        if keyword in word or word in keyword:
+                            match_found = True
+                        # Stemming si disponible
+                        elif stemmer and stemmer.stem(word) == stemmer.stem(keyword):
+                            match_found = True
+                    
+                    if match_found:
                         detected_categories.add(category)
+                        category_word_count[category] += 1
+                        theme_word_freq[category] += 1
                         break
 
-        # Compter chaque catégorie une fois par rêve
+        # Compter chaque catégorie une fois par rêve (pour document frequency)
         for category in detected_categories:
             theme_document_freq[category] += 1
 
-    # Retourner les thèmes récurrents
-    recurring_themes = [
-        (theme, count)
-        for theme, count in theme_document_freq.items()
-        if count >= 2
-    ]
-    return sorted(recurring_themes, key=lambda x: x[1], reverse=True)
+    # AMÉLIORATION : Stratégie adaptative selon le volume de données
+    if total_dreams <= 3:
+        # Pour très peu de rêves, utiliser la fréquence des mots
+        recurring_themes = [
+            (theme, freq)
+            for theme, freq in theme_word_freq.items()
+            if freq >= 1  # Au moins 1 occurrence
+        ]
+        logger.debug(f"Petit dataset ({total_dreams} rêves): utilisation fréquence mots")
+    elif total_dreams <= 6:
+        # Dataset moyen : mix entre document frequency et word frequency
+        recurring_themes = []
+        for theme in set(list(theme_document_freq.keys()) + list(theme_word_freq.keys())):
+            doc_freq = theme_document_freq.get(theme, 0)
+            word_freq = theme_word_freq.get(theme, 0)
+            
+            # Score hybride : privilégier document frequency mais accepter word frequency élevée
+            if doc_freq >= 2:
+                score = doc_freq
+            elif word_freq >= 2:
+                score = 1  # Score minimal mais valide
+            else:
+                continue
+                
+            recurring_themes.append((theme, score))
+        logger.debug(f"Dataset moyen ({total_dreams} rêves): utilisation score hybride")
+    else:
+        # Dataset plus grand : utiliser document frequency classique
+        recurring_themes = [
+            (theme, count)
+            for theme, count in theme_document_freq.items()
+            if count >= 2
+        ]
+        logger.debug(f"Grand dataset ({total_dreams} rêves): utilisation document frequency")
+
+    # FALLBACK : Si aucun thème trouvé, analyse plus basique
+    if not recurring_themes and dream_texts:
+        logger.debug("Aucun thème catégorisé trouvé, analyse basique des mots fréquents")
+        
+        # Analyser les mots les plus fréquents de tous les rêves
+        all_text = " ".join(dream_texts).lower()
+        words = _preprocess_for_analysis(all_text).split()
+        
+        if words:
+            word_counts = Counter(words)
+            # Prendre les mots qui apparaissent au moins dans un rêve
+            min_freq = max(1, total_dreams // 3) if total_dreams > 3 else 1
+            
+            basic_themes = [
+                (word, count)
+                for word, count in word_counts.most_common(10)
+                if count >= min_freq and len(word) >= 4 and word not in ['reve', 'rever', 'fait', 'suis', 'dans', 'avec', 'tout', 'tres', 'bien', 'comme', 'puis', 'alors']
+            ]
+            
+            if basic_themes:
+                recurring_themes = basic_themes[:5]  # Max 5 thèmes basiques
+                logger.debug(f"Thèmes basiques trouvés: {[t[0] for t in recurring_themes]}")
+
+    result = sorted(recurring_themes, key=lambda x: x[1], reverse=True)
+    logger.debug(f"Analyse catégorique: {len(result)} thèmes pour {total_dreams} rêves")
+    
+    return result
 
 
-def analyze_recurring_themes(user, min_dreams=2, min_occurrence=2):
-    """Analyse adaptative selon le volume de données"""
-    logger.info(f"Analyse thématiques récurrentes user {user.id}")
+def get_themes_stats_filtered(user, period=None, start_date=None, end_date=None):
+    """
+    Analyse les thématiques récurrentes pour une période donnée
+    Utilise la même logique qu'analyze_recurring_themes pour la cohérence
+    """
+    logger.info(f"Analyse thématiques filtrées user {user.id} - period: {period}")
 
-    dreams = (
-        Dream.objects.filter(user=user, transcription__isnull=False)
-        .exclude(transcription="")
-        .values_list('transcription', flat=True)
-    )
+    dreams_queryset = get_date_filter_queryset(user, period, start_date, end_date)
+    dreams = dreams_queryset.filter(transcription__isnull=False).exclude(transcription="")
 
-    dream_texts = list(dreams)
+    dream_texts = list(dreams.values_list('transcription', flat=True))
     total_dreams = len(dream_texts)
 
-    if total_dreams < min_dreams:
+    if total_dreams < 2:
         return {
-            'top_theme': 'Pas encore de données',
-            'percentage': 0,
+            'themes': {},
             'total_dreams': total_dreams,
-            'message': f'Au moins {min_dreams} rêves nécessaires',
+            'top_theme': None,
+            'has_data': False,
+            'message': f'Au moins 2 rêves nécessaires pour détecter des thématiques',
         }
 
-    # Stratégie adaptative selon le volume
-    if total_dreams >= 10:
-        logger.info("Dataset important : tentative BERTopic")
-        themes = _bertopic_analysis(dream_texts, total_dreams)
+    # ✅ UTILISER LA MÊME LOGIQUE qu'analyze_recurring_themes
+    if total_dreams >= 8 and BERTOPIC_AVAILABLE:
+        themes_results = _bertopic_analysis(dream_texts, total_dreams)
         method = "BERTopic"
     else:
-        logger.info("Dataset petit : analyse par catégories")
-        themes = None
+        themes_results = _category_analysis(dream_texts, total_dreams)
         method = "Catégories"
 
-    # Fallback vers catégories si BERTopic échoue
-    if not themes:
-        logger.info("Fallback vers analyse par catégories")
-        themes = _category_analysis(dream_texts, total_dreams)
-        method = "Catégories"
-
-    if not themes:
+    if not themes_results:
         return {
-            'top_theme': 'Aucune récurrence détectée',
-            'percentage': 0,
+            'themes': {},
             'total_dreams': total_dreams,
-            'message': 'Pas de thématique récurrente trouvée',
+            'top_theme': None,
+            'has_data': False,
+            'message': 'Aucune thématique récurrente détectée',
         }
 
-    # Thème principal
-    top_theme_name, top_theme_count = themes[0]
-    top_theme_percentage = round((top_theme_count / total_dreams) * 100, 1)
+    # Formatage pour le frontend
+    themes_dict = {}
+    for theme_name, count in themes_results:
+        percentage = round((count / total_dreams) * 100, 1)
+        themes_dict[theme_name.capitalize()] = {
+            'count': count,
+            'percentage': percentage,
+        }
 
-    logger.info(
-        f"Thème détecté ({method}): {top_theme_name} ({top_theme_percentage}%)"
-    )
+    top_theme = {
+        'name': themes_results[0][0].capitalize(),
+        'count': themes_results[0][1],
+        'percentage': round((themes_results[0][1] / total_dreams) * 100, 1),
+    }
+
+    logger.info(f"Thématiques analysées ({method}): {len(themes_results)} trouvées")
 
     return {
-        'top_theme': top_theme_name.capitalize(),
-        'percentage': top_theme_percentage,
+        'themes': themes_dict,
         'total_dreams': total_dreams,
-        'all_themes': themes[:10],
-        'message': f'{len(themes)} thématiques trouvées ({method})',
+        'top_theme': top_theme,
+        'has_data': True,
+        'method': method,
+        # ✅ NOUVEAU : Retourner les thèmes bruts pour réutilisation
+        'themes_list': [theme_name.capitalize() for theme_name, _ in themes_results],
+        'raw_themes_results': themes_results,
     }
 
 
+def get_themes_timeline_filtered(user, period=None, start_date=None, end_date=None):
+    """
+    Analyse l'évolution des thématiques dans le temps
+    NOUVELLE VERSION : Utilise les mêmes thèmes que get_themes_stats_filtered
+    """
+    logger.info(f"Timeline thématiques user {user.id}")
+
+    dreams_queryset = get_date_filter_queryset(user, period, start_date, end_date)
+    dreams = (
+        dreams_queryset.filter(transcription__isnull=False)
+        .exclude(transcription="")
+        .order_by('created_at')
+    )
+
+    if dreams.count() < 2:
+        return [], []
+
+    # ✅ ÉTAPE 1 : Obtenir les thèmes globaux de la période (cohérence garantie)
+    global_themes_analysis = get_themes_stats_filtered(user, period, start_date, end_date)
+    
+    if not global_themes_analysis['has_data']:
+        return [], []
+    
+    # Récupérer la liste des thèmes à suivre dans la timeline
+    themes_to_track = global_themes_analysis['themes_list'][:10]  # Max 10 thèmes pour lisibilité
+    
+    logger.info(f"Thèmes à suivre dans timeline: {themes_to_track}")
+
+    # ✅ ÉTAPE 2 : Grouper les rêves par période temporelle
+    if period in ['month', '3months']:
+        # Groupement par semaine pour périodes courtes
+        date_format = '%Y-W%U'
+        display_format = lambda d: f"Sem {d.strftime('%U')}"
+    else:
+        # Groupement par mois pour périodes longues
+        date_format = '%Y-%m'
+        display_format = lambda d: d.strftime('%m/%Y')
+
+    dreams_by_period = defaultdict(list)
+    for dream in dreams:
+        period_key = dream.created_at.strftime(date_format)
+        dreams_by_period[period_key].append(dream.transcription)
+
+    # ✅ ÉTAPE 3 : Pour chaque période, compter SEULEMENT les thèmes prédéfinis
+    timeline_data = []
+
+    for period_key in sorted(dreams_by_period.keys()):
+        texts = dreams_by_period[period_key]
+        period_data = {
+            'period': period_key, 
+            'total_dreams': len(texts)
+        }
+        
+        # Initialiser tous les thèmes à 0
+        for theme in themes_to_track:
+            period_data[theme] = 0
+
+        # ✅ COMPTER SEULEMENT les thèmes qui correspondent à notre liste globale
+        if len(texts) >= 1:
+            # Utiliser la même méthode d'analyse que pour les stats globales
+            if len(texts) >= 8 and BERTOPIC_AVAILABLE:
+                period_themes = _bertopic_analysis(texts, len(texts))
+            else:
+                period_themes = _category_analysis(texts, len(texts))
+
+            # Mapper les résultats aux thèmes globaux
+            if period_themes:
+                for theme_name, count in period_themes:
+                    theme_clean = theme_name.capitalize()
+                    if theme_clean in themes_to_track:
+                        period_data[theme_clean] = count
+                        logger.debug(f"Période {period_key}: {theme_clean} = {count}")
+
+        timeline_data.append(period_data)
+
+    logger.info(f"Timeline thématiques: {len(timeline_data)} périodes pour {len(themes_to_track)} thèmes")
+    
+    return timeline_data, themes_to_track
+
+
+def analyze_recurring_themes(user, min_dreams=2, min_occurrence=2):
+    """
+    MISE À JOUR : Utilise maintenant get_themes_stats_filtered pour éviter la duplication
+    """
+    logger.info(f"Analyse thématiques récurrentes user {user.id}")
+    
+    # Utiliser la fonction harmonisée qui contient déjà toute la logique
+    result = get_themes_stats_filtered(user, period='all')
+    
+    if not result['has_data']:
+        return {
+            'top_theme': 'Pas encore de données',
+            'percentage': 0,
+            'total_dreams': result['total_dreams'],
+            'message': result['message'],
+        }
+    
+    # Reformater pour correspondre à l'ancien format de retour
+    top_theme_info = result['top_theme']
+    
+    return {
+        'top_theme': top_theme_info['name'],
+        'percentage': top_theme_info['percentage'],
+        'total_dreams': result['total_dreams'],
+        'all_themes': [(name, data['count']) for name, data in result['themes'].items()],
+        'message': f"{len(result['themes'])} thématiques trouvées ({result['method']})",
+    }
 # ---------- PROFIL ONYRIQUE ----------
 
 
@@ -1198,200 +1420,6 @@ def get_emotions_timeline_filtered(
         timeline_list.append(entry)
 
     return timeline_list, list(all_emotions)
-
-
-def get_themes_stats_filtered(
-    user, period=None, start_date=None, end_date=None
-):
-    """
-    Analyse les thématiques récurrentes pour une période donnée
-    """
-    logger.info(
-        f"Analyse thématiques filtrées user {user.id} - period: {period}"
-    )
-
-    dreams_queryset = get_date_filter_queryset(
-        user, period, start_date, end_date
-    )
-    dreams = dreams_queryset.filter(transcription__isnull=False).exclude(
-        transcription=""
-    )
-
-    dream_texts = list(dreams.values_list('transcription', flat=True))
-    total_dreams = len(dream_texts)
-
-    if total_dreams < 2:
-        return {
-            'themes': {},
-            'total_dreams': total_dreams,
-            'top_theme': None,
-            'has_data': False,
-            'message': f'Au moins 2 rêves nécessaires pour détecter des thématiques',
-        }
-
-    # Utiliser la logique existante d'analyze_recurring_themes mais adaptée
-    if total_dreams >= 8 and BERTOPIC_AVAILABLE:
-        themes_results = _bertopic_analysis(dream_texts, total_dreams)
-        method = "BERTopic"
-    else:
-        themes_results = _category_analysis(dream_texts, total_dreams)
-        method = "Catégories"
-
-    if not themes_results:
-        return {
-            'themes': {},
-            'total_dreams': total_dreams,
-            'top_theme': None,
-            'has_data': False,
-            'message': 'Aucune thématique récurrente détectée',
-        }
-
-    # Formatage pour le frontend
-    themes_dict = {}
-    for theme_name, count in themes_results:
-        percentage = round((count / total_dreams) * 100, 1)
-        themes_dict[theme_name.capitalize()] = {
-            'count': count,
-            'percentage': percentage,
-        }
-
-    top_theme = {
-        'name': themes_results[0][0].capitalize(),
-        'count': themes_results[0][1],
-        'percentage': round((themes_results[0][1] / total_dreams) * 100, 1),
-    }
-
-    logger.info(
-        f"Thématiques analysées ({method}): {len(themes_results)} trouvées"
-    )
-
-    return {
-        'themes': themes_dict,
-        'total_dreams': total_dreams,
-        'top_theme': top_theme,
-        'has_data': True,
-        'method': method,
-    }
-
-
-def get_themes_timeline_filtered(
-    user, period=None, start_date=None, end_date=None
-):
-    """
-    Analyse l'évolution des thématiques dans le temps
-    Retourne les données pour un graphique temporel des thèmes
-    """
-    logger.info(f"Timeline thématiques user {user.id}")
-
-    dreams_queryset = get_date_filter_queryset(
-        user, period, start_date, end_date
-    )
-    dreams = (
-        dreams_queryset.filter(transcription__isnull=False)
-        .exclude(transcription="")
-        .order_by('created_at')
-    )
-
-    if dreams.count() < 2:
-        return [], []
-
-    # Grouper les rêves par semaine ou mois selon la période
-    if period in ['month', '3months']:
-        # Groupement par semaine
-        date_format = '%Y-W%U'  # Année-Semaine
-        display_format = lambda d: f"Sem {d.strftime('%U')}"
-    else:
-        # Groupement par mois
-        date_format = '%Y-%m'
-        display_format = lambda d: d.strftime('%m/%Y')
-
-    # Organiser les rêves par période
-    dreams_by_period = defaultdict(list)
-    for dream in dreams:
-        period_key = dream.created_at.strftime(date_format)
-        dreams_by_period[period_key].append(dream.transcription)
-
-    # Analyser chaque période
-    timeline_data = []
-    all_themes = set()
-
-    for period_key in sorted(dreams_by_period.keys()):
-        texts = dreams_by_period[period_key]
-
-        if len(texts) >= 2:
-            # Analyse des thèmes pour cette période
-            if len(texts) >= 5 and BERTOPIC_AVAILABLE:
-                themes_results = _bertopic_analysis(texts, len(texts))
-            else:
-                themes_results = _category_analysis(texts, len(texts))
-
-            # Préparer les données pour cette période
-            period_data = {'period': period_key, 'total_dreams': len(texts)}
-
-            if themes_results:
-                for theme_name, count in themes_results:
-                    theme_clean = theme_name.capitalize()
-                    period_data[theme_clean] = count
-                    all_themes.add(theme_clean)
-
-            timeline_data.append(period_data)
-
-    # S'assurer que toutes les périodes ont toutes les thématiques (avec 0 si absent)
-    for entry in timeline_data:
-        for theme in all_themes:
-            if theme not in entry:
-                entry[theme] = 0
-
-    return timeline_data, list(all_themes)
-
-
-def get_theme_distribution_by_emotion(
-    user, period=None, start_date=None, end_date=None
-):
-    """
-    Analyse la répartition des thématiques par émotion dominante
-    Utile pour comprendre quelles thématiques génèrent quelles émotions
-    """
-    logger.info(f"Distribution thèmes-émotions user {user.id}")
-
-    dreams_queryset = get_date_filter_queryset(
-        user, period, start_date, end_date
-    )
-    dreams = dreams_queryset.filter(
-        transcription__isnull=False, dominant_emotion__isnull=False
-    ).exclude(transcription="")
-
-    if dreams.count() < 3:
-        return {}
-
-    # Grouper par émotion
-    dreams_by_emotion = defaultdict(list)
-    for dream in dreams:
-        emotion = format_emotion_label(dream.dominant_emotion)
-        dreams_by_emotion[emotion].append(dream.transcription)
-
-    # Analyser les thèmes pour chaque émotion
-    emotion_themes = {}
-
-    for emotion, texts in dreams_by_emotion.items():
-        if len(texts) >= 2:
-            if len(texts) >= 5 and BERTOPIC_AVAILABLE:
-                themes_results = _bertopic_analysis(texts, len(texts))
-            else:
-                themes_results = _category_analysis(texts, len(texts))
-
-            if themes_results:
-                # Prendre les 3 premiers thèmes pour cette émotion
-                emotion_themes[emotion] = [
-                    {
-                        'name': theme_name.capitalize(),
-                        'count': count,
-                        'percentage': round((count / len(texts)) * 100, 1),
-                    }
-                    for theme_name, count in themes_results[:3]
-                ]
-
-    return emotion_themes
 
 
 # ---------- NORMALISATION DES LABELS ----------

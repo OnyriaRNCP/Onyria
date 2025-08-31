@@ -35,7 +35,8 @@ from ..utils import (
     _preprocess_for_analysis,
     _category_analysis,
     analyze_recurring_themes,
-    _bertopic_analysis
+    _bertopic_analysis,
+    get_themes_stats_filtered,
 )
 
 User = get_user_model()
@@ -43,6 +44,7 @@ User = get_user_model()
 TEST_USER_PASSWORD = os.environ.get('TEST_PASSWORD', 'django_test_secure_2024')
 
 logger = logging.getLogger(__name__)
+
 
 class MathematicalFunctionsTest(TestCase):
     """
@@ -1239,7 +1241,99 @@ class DashboardFunctionsTest(TestCase):
         self.assertLess(execution_time, 0.5)
         self.assertEqual(stats['total'], 110)  # 10 + 100
         logger.info("[PASS] Performance acceptable même avec 110 rêves")
-        
+
+    def _create_themed_dreams(self):
+        """Créer des rêves avec thématiques identifiables"""
+
+        base_date = timezone.now()
+        dreams = []
+
+        # Rêves avec thème "animal" (chat, chien, oiseau)
+        animal_dreams = [
+            (
+                "J'ai rêvé d'un grand chat noir qui me suivait",
+                "rêve",
+                "curiosité",
+            ),
+            (
+                "Un chien fidèle m'accompagnait dans mes aventures",
+                "rêve",
+                "joie",
+            ),
+            ("Des oiseaux colorés volaient autour de moi", "rêve", "liberté"),
+        ]
+
+        # Rêves avec thème "vol/chute"
+        flight_dreams = [
+            (
+                "Je volais au-dessus des nuages comme un oiseau",
+                "rêve",
+                "liberté",
+            ),
+            ("Je tombais dans un puits sans fond", "cauchemar", "peur"),
+            ("Je planais gracieusement au-dessus de la ville", "rêve", "joie"),
+        ]
+
+        # Rêves avec thème "eau"
+        water_dreams = [
+            (
+                "Une grande vague m'emportait vers l'océan",
+                "cauchemar",
+                "anxiété",
+            ),
+            ("Je nageais dans une rivière cristalline", "rêve", "sérénité"),
+        ]
+
+        all_dream_texts = animal_dreams + flight_dreams + water_dreams
+
+        for i, (text, dream_type, emotion) in enumerate(all_dream_texts):
+            dream = Dream.objects.create(
+                user=self.user,
+                transcription=text,
+                dream_type=dream_type,
+                dominant_emotion=emotion,
+                is_analyzed=True,
+            )
+            # Étaler sur différentes périodes
+            dream_date = base_date - timedelta(
+                days=i * 7
+            )  # Un rêve par semaine
+            dream.created_at = dream_date
+            dream.save()
+            dreams.append(dream)
+
+        logger.info(f"Créé {len(dreams)} rêves thématiques pour tests")
+        return dreams
+
+    def test_get_themes_stats_filtered_basic(self):
+        """Test de base des statistiques thématiques"""
+        logger.info("[TEST] Validation stats thématiques de base")
+
+        stats = get_themes_stats_filtered(self.user, period='all')
+
+        # Vérifications de structure
+        self.assertIn('themes', stats)
+        self.assertIn('total_dreams', stats)
+        self.assertIn('has_data', stats)
+        self.assertIn('top_theme', stats)
+
+        # Avec 8 rêves, on doit avoir des données
+        self.assertTrue(stats['has_data'])
+        self.assertEqual(stats['total_dreams'], 8)
+        self.assertIsNotNone(stats['top_theme'])
+
+        logger.info(
+            f"[RESULT] {len(stats['themes'])} thèmes détectés: {list(stats['themes'].keys())}"
+        )
+
+        # Le thème principal doit avoir les bonnes propriétés
+        if stats['top_theme']:
+            self.assertIn('name', stats['top_theme'])
+            self.assertIn('count', stats['top_theme'])
+            self.assertIn('percentage', stats['top_theme'])
+
+        logger.info("[PASS] Structure des stats thématiques correcte")
+
 class ThemeAnalysisUtilsTest(TestCase):
     """
     Tests des nouvelles fonctions utilitaires thématiques.
@@ -1257,20 +1351,20 @@ class ThemeAnalysisUtilsTest(TestCase):
         Test de préprocessing de base pour l'analyse thématique.
         """
         # Texte avec mots significatifs et bruit
-        
+
         text = "J'ai rêvé d'un OCÉAN bleu avec des dauphins qui nageaient librement ! C'était magnifique..."
-        
+
         result = _preprocess_for_analysis(text)
-        
+
         # Vérifications
         self.assertIsInstance(result, str)
         self.assertIn('océan', result.lower())
         self.assertIn('dauphin', result.lower())
-        
+
         # Le bruit doit être filtré
         self.assertNotIn('!', result)
         self.assertNotIn('était', result)  # Stop word
-        self.assertNotIn('des', result)    # Stop word
+        self.assertNotIn('des', result)  # Stop word
 
     def test_preprocess_for_analysis_edge_cases(self):
         """
@@ -1279,11 +1373,11 @@ class ThemeAnalysisUtilsTest(TestCase):
         # Texte vide
         self.assertEqual(_preprocess_for_analysis(""), "")
         self.assertEqual(_preprocess_for_analysis(None), "")
-        
+
         # Texte très court
         short_result = _preprocess_for_analysis("Je vole")
         self.assertTrue(len(short_result.strip()) > 0 or short_result == "")
-        
+
         # Texte avec uniquement des stop words
         stopwords_result = _preprocess_for_analysis("le la les des du de")
         # Doit être vide ou très court après filtrage
@@ -1299,21 +1393,21 @@ class ThemeAnalysisUtilsTest(TestCase):
             "J'étais dans un avion qui décollait vers les nuages",
             "Je nageais avec des poissons dans l'océan",
             "Il y avait un chat noir dans ma maison",
-            "Je volais comme un oiseau dans le ciel"
+            "Je volais comme un oiseau dans le ciel",
         ]
-        
+
         result = _category_analysis(dream_texts, len(dream_texts))
-        
+
         # Vérifications
         self.assertIsInstance(result, list)
-        
+
         if result:
             # Chaque thème doit avoir (nom, count)
             for theme_name, count in result:
                 self.assertIsInstance(theme_name, str)
                 self.assertIsInstance(count, int)
                 self.assertGreaterEqual(count, 2)  # min_occurrence
-            
+
             # Les résultats doivent être triés par fréquence
             counts = [count for _, count in result]
             self.assertEqual(counts, sorted(counts, reverse=True))
@@ -1341,7 +1435,7 @@ class ThemeAnalysisUtilsTest(TestCase):
         Test analyse thématique sans rêves.
         """
         result = analyze_recurring_themes(self.user)
-        
+
         self.assertEqual(result['top_theme'], 'Pas encore de données')
         self.assertEqual(result['percentage'], 0)
         self.assertEqual(result['total_dreams'], 0)
@@ -1355,26 +1449,26 @@ class ThemeAnalysisUtilsTest(TestCase):
         dreams_data = [
             "J'ai rêvé que je volais dans le ciel bleu",
             "Je volais au-dessus de la mer comme un oiseau",
-            "Il y avait un chat dans ma maison d'enfance"
+            "Il y avait un chat dans ma maison d'enfance",
         ]
-        
+
         for i, text in enumerate(dreams_data):
             Dream.objects.create(
                 user=self.user,
                 transcription=text,
                 dream_type="rêve",
-                dominant_emotion="joie"
+                dominant_emotion="joie",
             )
-        
+
         result = analyze_recurring_themes(self.user, min_dreams=2)
-        
+
         # Vérifications de base
         self.assertIsInstance(result, dict)
         self.assertIn('top_theme', result)
         self.assertIn('percentage', result)
         self.assertIn('total_dreams', result)
         self.assertEqual(result['total_dreams'], 3)
-        
+
         # Avec 3 rêves, on doit avoir un thème
         if result['top_theme'] != 'Aucune récurrence détectée':
             self.assertGreater(result['percentage'], 0)
@@ -1385,36 +1479,42 @@ class ThemeAnalysisUtilsTest(TestCase):
         """
         # Créer 15 rêves avec patterns clairs
         dreams_data = []
-        
+
         # 8 rêves de vol (thème dominant)
         for i in range(8):
-            dreams_data.append(f"Je volais dans le ciel comme un oiseau libre numéro {i}")
-        
+            dreams_data.append(
+                f"Je volais dans le ciel comme un oiseau libre numéro {i}"
+            )
+
         # 4 rêves d'eau
         for i in range(4):
-            dreams_data.append(f"J'étais dans l'océan avec des poissons colorés {i}")
-        
+            dreams_data.append(
+                f"J'étais dans l'océan avec des poissons colorés {i}"
+            )
+
         # 3 rêves divers
-        dreams_data.extend([
-            "Il y avait un chat dans la maison",
-            "Je courais dans une forêt mystérieuse",
-            "J'étais dans une école abandonné"
-        ])
-        
+        dreams_data.extend(
+            [
+                "Il y avait un chat dans la maison",
+                "Je courais dans une forêt mystérieuse",
+                "J'étais dans une école abandonné",
+            ]
+        )
+
         for text in dreams_data:
             Dream.objects.create(
                 user=self.user,
                 transcription=text,
                 dream_type="rêve",
-                dominant_emotion="joie"
+                dominant_emotion="joie",
             )
-        
+
         with patch('diary.utils.BERTOPIC_AVAILABLE', True):
             result = analyze_recurring_themes(self.user)
-        
+
         self.assertEqual(result['total_dreams'], 15)
         self.assertNotEqual(result['top_theme'], 'Pas encore de données')
-        
+
         # Avec 15 rêves, on doit détecter quelque chose
         if result['top_theme'] != 'Aucune récurrence détectée':
             self.assertGreater(result['percentage'], 0)
@@ -1429,15 +1529,17 @@ class ThemeAnalysisUtilsTest(TestCase):
                 user=self.user,
                 transcription=f"Je volais dans le ciel étoilé rêve {i}",
                 dream_type="rêve",
-                dominant_emotion="joie"
+                dominant_emotion="joie",
             )
-        
+
         stats = get_profil_onirique_stats(self.user)
-        
+
         # Vérifier que les champs thématiques sont présents
         self.assertIn('thematique_recurrente', stats)
         self.assertIn('thematique_percentage', stats)
-        
+
         # Avec 5 rêves similaires, on doit détecter un thème
-        self.assertNotEqual(stats['thematique_recurrente'], 'Pas encore de données')
+        self.assertNotEqual(
+            stats['thematique_recurrente'], 'Pas encore de données'
+        )
         self.assertIsInstance(stats['thematique_percentage'], (int, float))

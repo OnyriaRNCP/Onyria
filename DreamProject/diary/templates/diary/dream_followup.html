@@ -728,11 +728,16 @@ function applyCustomFilter(startDate, endDate) {
 {% if has_data %}
 // Configuration des couleurs pour cohérence visuelle avec contraste amélioré
 const colors = {
-  reve: '#4e3f86',      // Votre couleur brand principale pour les rêves
-  cauchemar: '#E6C98C',  // Couleur pastel-yellow plus foncée pour les cauchemars
+  reve: '#4e3f86',
+  cauchemar: '#E6C98C',  
   emotions: [
     '#4e3f86', '#E6C98C', '#D8D3C3', '#c7a96b',
     '#9a8472', '#b5a491', '#8b7355', '#a69684'
+  ],
+  themes: [
+    '#4e3f86', '#E6C98C', '#D8D3C3', '#c7a96b', '#9a8472', 
+    '#b5a491', '#8b7355', '#a69684', '#7d6e5f', '#958c7a',
+    '#6f665a', '#8a7f73', '#b2a895', '#9c9187', '#7a7067'
   ]
 };
 
@@ -743,6 +748,19 @@ const emotionsStats = {{ emotions_stats|safe }};
 const emotionsTimeline = {{ emotions_timeline|safe }};
 const emotionsList = {{ emotions_list|safe }};
 
+// DEBUG DES DONNÉES THÉMATIQUES
+console.log('=== DEBUG THEMES TIMELINE ===');
+console.log('themes_timeline depuis Django:', {{ themes_timeline|safe }});
+console.log('themes_list depuis Django:', {{ themes_list|safe }});
+
+// Variables pour éviter les erreurs de référence
+const debugThemesTimeline = {{ themes_timeline|safe }};
+const debugThemesList = {{ themes_list|safe }};
+
+console.log('debugThemesTimeline:', debugThemesTimeline);
+console.log('debugThemesList:', debugThemesList);
+console.log('debugThemesTimeline.length:', debugThemesTimeline.length);
+console.log('debugThemesList.length:', debugThemesList.length);
 
 // Configuration Chart.js par défaut
 Chart.defaults.font.family = "'Schibsted Grotesk', sans-serif";
@@ -1026,20 +1044,13 @@ const themesData = {{ themes_stats.themes|safe }};
 const themeLabels = Object.keys(themesData);
 const themePercentages = themeLabels.map(theme => themesData[theme].percentage);
 
-// Couleurs pour les thématiques (palette étendue)
-const themeColors = [
-  '#4e3f86', '#E6C98C', '#D8D3C3', '#c7a96b', '#9a8472', 
-  '#b5a491', '#8b7355', '#a69684', '#7d6e5f', '#958c7a',
-  '#6f665a', '#8a7f73', '#b2a895', '#9c9187', '#7a7067'
-];
-
 new Chart(ctxThemes, {
   type: 'pie',
   data: {
     labels: themeLabels,
     datasets: [{
       data: themePercentages,
-      backgroundColor: themeColors.slice(0, themeLabels.length),
+      backgroundColor: colors.themes.slice(0, themeLabels.length),
       borderWidth: 2,
       borderColor: '#ffffff',
       hoverBorderWidth: 3,
@@ -1098,111 +1109,144 @@ new Chart(ctxThemes, {
 });
 {% endif %}
 
-{% if themes_timeline %}
-// 6. Graphique timeline - Thématiques
-const ctxThemesTimeline = document.getElementById('themesTimelineChart').getContext('2d');
-const themesTimelineData = {{ themes_timeline|safe }};
-const themesTimelineList = {{ themes_list|safe }};
-
-// Créer les datasets pour chaque thématique
-const themesDatasets = themesTimelineList.map((theme, index) => ({
-  label: theme,
-  data: themesTimelineData.map(d => d[theme] || 0),
-  borderColor: themeColors[index % themeColors.length],
-  backgroundColor: themeColors[index % themeColors.length] + '30',
-  borderWidth: 3,
-  tension: 0.4,
-  fill: false,
-  pointBackgroundColor: themeColors[index % themeColors.length],
-  pointBorderColor: '#ffffff',
-  pointBorderWidth: 2,
-  pointRadius: 4,
-  pointHoverRadius: 6
-}));
-
-new Chart(ctxThemesTimeline, {
-  type: 'line',
-  data: {
-    labels: themesTimelineData.map(d => d.period),
-    datasets: themesDatasets
-  },
-  options: {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: {
-      intersect: false,
-      mode: 'index'
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        ticks: { 
-          stepSize: 1,
-          color: '#6b7280'
+// 6. Graphique timeline - Thématiques avec debugging renforcé
+if (debugThemesTimeline.length > 0 && debugThemesList.length > 0) {
+  console.log('✅ Condition remplie, création du graphique timeline thématiques');
+  
+  const ctxThemesTimeline = document.getElementById('themesTimelineChart').getContext('2d');
+  
+  if (!ctxThemesTimeline) {
+    console.error('❌ Element canvas themesTimelineChart introuvable !');
+  } else {
+    console.log('✅ Canvas trouvé, création des datasets...');
+    
+    // Créer les datasets pour chaque thématique avec debug
+    const themesDatasets = debugThemesList.map((theme, index) => {
+      const data = debugThemesTimeline.map(d => {
+        const value = d[theme] || 0;
+        console.log(`Theme ${theme}, période ${d.period}: ${value}`);
+        return value;
+      });
+      
+      console.log(`Dataset pour ${theme}:`, data);
+      
+      return {
+        label: theme,
+        data: data,
+        borderColor: colors.themes[index % colors.themes.length],
+        backgroundColor: colors.themes[index % colors.themes.length] + '30',
+        borderWidth: 3,
+        tension: 0.4,
+        fill: false,
+        pointBackgroundColor: colors.themes[index % colors.themes.length],
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        pointHoverRadius: 6
+      };
+    });
+    
+    console.log('Tous les datasets créés:', themesDatasets);
+    
+    // Labels pour l'axe X
+    const timelineLabels = debugThemesTimeline.map(d => d.period);
+    console.log('Labels temporels:', timelineLabels);
+    
+    // Créer le graphique
+    try {
+      new Chart(ctxThemesTimeline, {
+        type: 'line',
+        data: {
+          labels: timelineLabels,
+          datasets: themesDatasets
         },
-        grid: {
-          color: '#f3f4f6'
-        },
-        title: {
-          display: true,
-          text: 'Nombre de rêves',
-          color: '#6b7280',
-          font: { size: 12, weight: '500' }
-        }
-      },
-      x: {
-        ticks: {
-          color: '#6b7280',
-          maxTicksLimit: 8 // Limiter le nombre de labels sur l'axe X
-        },
-        grid: {
-          color: '#f3f4f6'
-        },
-        title: {
-          display: true,
-          text: 'Période',
-          color: '#6b7280',
-          font: { size: 12, weight: '500' }
-        }
-      }
-    },
-    plugins: {
-      legend: {
-        position: 'bottom',
-        labels: { 
-          padding: 12, 
-          font: { size: 10, weight: '500' },
-          color: '#374151'
-        }
-      },
-      tooltip: {
-        backgroundColor: 'rgba(0,0,0,0.8)',
-        titleColor: '#ffffff',
-        bodyColor: '#ffffff',
-        borderColor: '#d1d5db',
-        borderWidth: 1,
-        cornerRadius: 8,
-        callbacks: {
-          title: function(context) {
-            return `Période: ${context[0].label}`;
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            intersect: false,
+            mode: 'index'
           },
-          label: function(context) {
-            const count = context.parsed.y;
-            if (count === 0) return null;
-            return `${context.dataset.label}: ${count} rêve${count > 1 ? 's' : ''}`;
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { 
+                stepSize: 1,
+                color: '#6b7280'
+              },
+              grid: {
+                color: '#f3f4f6'
+              },
+              title: {
+                display: true,
+                text: 'Nombre de rêves',
+                color: '#6b7280',
+                font: { size: 12, weight: '500' }
+              }
+            },
+            x: {
+              ticks: {
+                color: '#6b7280',
+                maxTicksLimit: 8
+              },
+              grid: {
+                color: '#f3f4f6'
+              },
+              title: {
+                display: true,
+                text: 'Période',
+                color: '#6b7280',
+                font: { size: 12, weight: '500' }
+              }
+            }
           },
-          filter: function(tooltipItem) {
-            return tooltipItem.parsed.y > 0; // Ne montrer que les valeurs > 0
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { 
+                padding: 12, 
+                font: { size: 10, weight: '500' },
+                color: '#374151'
+              }
+            },
+            tooltip: {
+              backgroundColor: 'rgba(0,0,0,0.8)',
+              titleColor: '#ffffff',
+              bodyColor: '#ffffff',
+              borderColor: '#d1d5db',
+              borderWidth: 1,
+              cornerRadius: 8,
+              callbacks: {
+                title: function(context) {
+                  return `Période: ${context[0].label}`;
+                },
+                label: function(context) {
+                  const count = context.parsed.y;
+                  if (count === 0) return null;
+                  return `${context.dataset.label}: ${count} rêve${count > 1 ? 's' : ''}`;
+                },
+                filter: function(tooltipItem) {
+                  return tooltipItem.parsed.y > 0;
+                }
+              }
+            }
+          },
+          layout: {
+            padding: 15
           }
         }
-      }
-    },
-    layout: {
-      padding: 15
+      });
+      console.log('✅ Graphique timeline thématiques créé avec succès');
+    } catch (error) {
+      console.error('❌ Erreur lors de la création du graphique:', error);
     }
   }
-});
-{% endif %}
+} else {
+  console.log('❌ Condition NON remplie pour timeline thématiques:');
+  console.log('- debugThemesTimeline.length:', debugThemesTimeline.length);
+  console.log('- debugThemesList.length:', debugThemesList.length);
+  console.log('- Condition complète:', debugThemesTimeline.length > 0 && debugThemesList.length > 0);
+}
 
 {% endif %}
 
