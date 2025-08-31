@@ -116,8 +116,8 @@ def analyse_from_voice(request):
     """Version SSE (Server-Sent Events) de analyse_from_voice pour affichage progressif des éléments"""
     
     def event_stream():
-    start_time = time.time()
-    dream = None
+        start_time = time.time()
+        dream = None
     try:
         if 'audio' not in request.FILES:
             logger.error("Analyse SSE: aucun fichier audio reçu")
