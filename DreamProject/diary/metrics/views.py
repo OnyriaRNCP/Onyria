@@ -1,5 +1,6 @@
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
+from django.contrib.admin.views.decorators import staff_member_required  # <- ajout
 from datetime import datetime, timezone
 from .runtime import get_snapshot
 
@@ -12,6 +13,7 @@ def _iso(ts):
         return None
     return datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
+@staff_member_required  # <- ajout : seulement pour les comptes is_staff=True
 @require_GET
 def ai_health_view(request):
     """
