@@ -20,7 +20,7 @@ def _iso(ts):
 @require_GET
 def ai_health_view(request):
     """
-    Endpoint JSON "santé IA". On lit le snapshot in-memory et l'info d'environnement.
+    Endpoint JSON "santé IA" enrichi avec les nouvelles métriques.
     En DEV/historical: on expose le total de rêves depuis .dev/dev_traces.jsonl.
     En PROD/Pré-prod (session): on expose le total de rêves de la session, déduit
     des succès 'mistral.interpretation' (un succès ↔ un rêve complété).
@@ -46,6 +46,13 @@ def ai_health_view(request):
         "uptime_s": snap.get("uptime_s"),
         "availability": snap.get("availability"),
         "latency": snap.get("latency"),
+        
+        # NOUVELLES MÉTRIQUES PRIORITÉ HAUTE
+        "pipeline_durations": snap.get("pipeline_durations", {}),  # Durées par étape
+        "fallbacks": snap.get("fallbacks", {}),                   # Taux de fallback
+        "retries": snap.get("retries", {}),                       # Stats retry
+        "sse_quality": snap.get("sse_quality", {}),               # Qualité SSE
+        
         "errors": snap.get("errors"),
         "totals": snap.get("totals"),
         "last_seen": _iso(snap.get("last_seen")),

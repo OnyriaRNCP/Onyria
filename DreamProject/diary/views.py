@@ -1,5 +1,6 @@
 import json
 import time
+import uuid
 from datetime import datetime
 import logging
 from django.shortcuts import render, get_object_or_404
@@ -29,8 +30,16 @@ from .constants import EMOTION_LABELS, DREAM_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
 
-# --- AJOUT: trace par rêve en DEV (historique) ---
-from .metrics.runtime import record_dream_trace  # <- ajout
+# --- métriques avancées ---
+from .metrics.runtime import (
+    record_dream_trace, 
+    metric_pipeline_duration,
+    metric_sse_start, 
+    metric_sse_first_event,
+    metric_sse_event,
+    metric_sse_complete,
+    metric_sse_abort
+)
 
 
 # ----- VUES PRINCIPALES ----- #
@@ -127,12 +136,22 @@ def analyse_from_voice(request):
     """Version SSE (Server-Sent Events) de analyse_from_voice pour affichage progressif des éléments"""
 
     def event_stream():
+        # ID de session SSE unique pour tracking
+        session_id = str(uuid.uuid4())
+        metric_sse_start(session_id)
+        first_event_sent = False
+        
         start_time = time.time()
         dream = None  # suivi du rêve provisoire pour pouvoir le supprimer en cas d'échec critique
+        
+        # Variables pour tracking des durées par étape
+        step_times = {}
+        
         try:
             if 'audio' not in request.FILES:
                 logger.error("Analyse SSE: aucun fichier audio reçu")
                 yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
+                metric_sse_abort(session_id)
                 return
 
             audio_file = request.FILES['audio']
@@ -141,19 +160,37 @@ def analyse_from_voice(request):
                 f"Analyse SSE user {request.user.id} démarrée - {len(audio_data)} bytes"
             )
 
-            # Transcription
+            # TRANSCRIPTION
+            step_times['transcribe_start'] = time.time()
             transcription = transcribe_audio(audio_data)
+            step_times['transcribe_end'] = time.time()
+            transcribe_duration = int((step_times['transcribe_end'] - step_times['transcribe_start']) * 1000)
+            metric_pipeline_duration("transcribe_ms", transcribe_duration)
+            
             if not transcription:
                 logger.error("Analyse SSE: échec transcription")
                 yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
+                metric_sse_abort(session_id)
                 return
+            
+            # Premier événement SSE
+            if not first_event_sent:
+                metric_sse_first_event(session_id)
+                first_event_sent = True
+            metric_sse_event(session_id)
             yield f"data: {json.dumps({'step': 'transcription', 'data': {'transcription': transcription}})}\n\n"
 
-            # Émotions
+            # ÉMOTIONS
+            step_times['emotion_start'] = time.time()
             emotions, dominant_emotion = analyze_emotions(transcription)
+            step_times['emotion_end'] = time.time()
+            emotion_duration = int((step_times['emotion_end'] - step_times['emotion_start']) * 1000)
+            metric_pipeline_duration("emotion_ms", emotion_duration)
+            
             if emotions is None:
                 logger.error("Analyse SSE: échec analyse émotionnelle")
                 yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
+                metric_sse_abort(session_id)
                 return
             dream_type = classify_dream(emotions)
 
@@ -167,6 +204,7 @@ def analyse_from_voice(request):
             formatted_dream_type = format_dream_type_label(dream_type)
 
             # Contrat SSE : renvoyer des strings (ex: 'Joie', 'Rêve')
+            metric_sse_event(session_id)
             yield f"data: {json.dumps({'step': 'emotions', 'data': {'dominant_emotion': formatted_dominant_emotion, 'dream_type': formatted_dream_type}})}\n\n"
 
             # Sauvegarde (créer le rêve d'abord pour avoir l'ID)
@@ -181,26 +219,39 @@ def analyse_from_voice(request):
             )
             logger.debug(f"Rêve {dream.id} créé")
 
-            # Image
+            # IMAGE
+            step_times['image_start'] = time.time()
             image_success = generate_image_from_text(
                 request.user, transcription, dream
             )
+            step_times['image_end'] = time.time()
+            image_duration = int((step_times['image_end'] - step_times['image_start']) * 1000)
+            metric_pipeline_duration("image_ms", image_duration)
+            
             if image_success:
                 dream.refresh_from_db()
                 if dream.image_url:
                     logger.info(f"Image envoyée via SSE pour rêve {dream.id}")
+                    metric_sse_event(session_id)
                     yield f"data: {json.dumps({'step': 'image', 'data': {'image_path': dream.image_url}})}\n\n"
                 else:
                     logger.warning(
                         f"Image générée mais URL manquante pour rêve {dream.id}"
                     )
+                    metric_sse_event(session_id)
                     yield f"data: {json.dumps({'step': 'image', 'data': {'image_path': None}})}\n\n"
             else:
                 logger.warning(f"Échec génération image pour rêve {dream.id}")
+                metric_sse_event(session_id)
                 yield f"data: {json.dumps({'step': 'image', 'data': {'image_path': None}})}\n\n"
 
-            # Interprétation
+            # INTERPRÉTATION
+            step_times['interpretation_start'] = time.time()
             interpretation = interpret_dream(transcription)
+            step_times['interpretation_end'] = time.time()
+            interpretation_duration = int((step_times['interpretation_end'] - step_times['interpretation_start']) * 1000)
+            metric_pipeline_duration("interpretation_ms", interpretation_duration)
+            
             if interpretation is None:
                 logger.error("Analyse SSE: échec interprétation")
                 # En cas d'échec critique, ne conserver AUCUN rêve
@@ -210,6 +261,7 @@ def analyse_from_voice(request):
                 except Exception:
                     pass
                 yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
+                metric_sse_abort(session_id)
                 return
 
             # Mettre à jour le rêve avec l'interprétation
@@ -217,6 +269,7 @@ def analyse_from_voice(request):
             dream.save()
 
             # Envoyer l'interprétation
+            metric_sse_event(session_id)
             yield f"data: {json.dumps({'step': 'interpretation', 'data': {'interpretation': interpretation}})}\n\n"
 
             total_duration = time.time() - start_time
@@ -225,7 +278,7 @@ def analyse_from_voice(request):
             
             logger.info(f"Analyse SSE user {request.user.id} réussie - Type: {dream_type}, Émotion: {raw_dominant_key} en {total_duration:.2f}s")
 
-            # --- AJOUT: en DEV, on garde une trace "par rêve" (historique, max 100) ---
+            # --- en DEV, on garde une trace "par rêve" (historique, max 100) avec durées d'étape ---
             try:
                 record_dream_trace(
                     dream_id=dream.id,
@@ -236,12 +289,19 @@ def analyse_from_voice(request):
                     has_image=bool(getattr(dream, "image_url", None)),
                     total_duration_ms=int(total_duration * 1000),
                     started_at_ts=float(start_time),
+                    # NOUVEAU: durées par étape
+                    transcribe_ms=transcribe_duration,
+                    emotion_ms=emotion_duration,
+                    image_ms=image_duration,
+                    interpretation_ms=interpretation_duration,
                 )
             except Exception:
                 # on ne veut pas casser le flux SSE si la trace échoue
                 pass
 
             # Succès explicite pour les tests (image peut échouer sans bloquer)
+            metric_sse_event(session_id)
+            metric_sse_complete(session_id)
             yield f"data: {json.dumps({'step': 'complete', 'success': True})}\n\n"
 
         except Exception as e:
@@ -257,6 +317,7 @@ def analyse_from_voice(request):
                     dream.delete()
             except Exception:
                 pass
+            metric_sse_abort(session_id)
             yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
 
     response = StreamingHttpResponse(

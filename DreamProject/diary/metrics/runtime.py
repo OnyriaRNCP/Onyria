@@ -43,6 +43,13 @@ class _Store:
         self.availability: Dict[str, Dict[str, int]] = {}  # par clé provider.op
         self.latency: Dict[str, List[int]] = {}            # latences en ms
         self.errors: Dict[str, Dict[str, int]] = {}        # raisons d'échec
+        
+        # Métriques avancées
+        self.fallbacks: Dict[str, Dict[str, int]] = {}     # compteurs fallback
+        self.retries: Dict[str, Dict[str, int]] = {}       # compteurs retry
+        self.sse_metrics: Dict[str, Dict] = {}             # métriques SSE
+        self.pipeline_durations: Dict[str, List[int]] = {} # durées par étape
+        
         self._lock = threading.Lock()                      # sérialisation
 
     @staticmethod
@@ -61,6 +68,59 @@ class _Store:
         bucket = self.errors.setdefault(key, {})
         bucket[reason] = bucket.get(reason, 0) + 1
 
+    # Enregistrer durée d'étape pipeline
+    def record_pipeline_duration(self, step: str, duration_ms: int) -> None:
+        with self._lock:
+            self.pipeline_durations.setdefault(step, []).append(int(duration_ms))
+
+    # Enregistrer fallback
+    def record_fallback(self, provider: str, op: str, attempt: int) -> None:
+        key = self._key(provider, op)
+        with self._lock:
+            bucket = self.fallbacks.setdefault(key, {"total_calls": 0, "fallback_calls": 0})
+            bucket["total_calls"] += 1
+            if attempt > 1:
+                bucket["fallback_calls"] += 1
+
+    # Enregistrer retry
+    def record_retry(self, provider: str, op: str, retry_count: int, backoff_ms: int) -> None:
+        key = self._key(provider, op)
+        with self._lock:
+            bucket = self.retries.setdefault(key, {"total_retries": 0, "backoff_total_ms": 0})
+            bucket["total_retries"] += retry_count
+            bucket["backoff_total_ms"] += backoff_ms
+
+    # Enregistrer métriques SSE
+    def record_sse_start(self, session_id: str) -> None:
+        with self._lock:
+            self.sse_metrics[session_id] = {
+                "started_at": time.time(),
+                "first_event_at": None,
+                "events_count": 0,
+                "completed": False,
+                "aborted": False
+            }
+
+    def record_sse_first_event(self, session_id: str) -> None:
+        with self._lock:
+            if session_id in self.sse_metrics:
+                self.sse_metrics[session_id]["first_event_at"] = time.time()
+
+    def record_sse_event(self, session_id: str) -> None:
+        with self._lock:
+            if session_id in self.sse_metrics:
+                self.sse_metrics[session_id]["events_count"] += 1
+
+    def record_sse_complete(self, session_id: str) -> None:
+        with self._lock:
+            if session_id in self.sse_metrics:
+                self.sse_metrics[session_id]["completed"] = True
+
+    def record_sse_abort(self, session_id: str) -> None:
+        with self._lock:
+            if session_id in self.sse_metrics:
+                self.sse_metrics[session_id]["aborted"] = True
+
     def record_ok(self, provider: str, op: str, latency_ms: Optional[int]) -> None:
         # Incrémente les compteurs de succès (section critique protégée)
         key = self._key(provider, op)
@@ -74,7 +134,7 @@ class _Store:
     def record_fail(
         self, provider: str, op: str, latency_ms: Optional[int], reason: Optional[str]
     ) -> None:
-        # Incrémente les compteurs d’échec + raison (section critique protégée)
+        # Incrémente les compteurs d'échec + raison (section critique protégée)
         key = self._key(provider, op)
         with self._lock:
             self.totals["fail"] += 1
@@ -103,7 +163,7 @@ class _Store:
                     "success_rate": round(rate, 3) if total else 0,
                 }
 
-            # Latence: p50/p95/avg et nombre de points
+            # Latence: p50/p95/p99/avg et nombre de points
             latency_out: Dict[str, Dict[str, float]] = {}
             for key, values in self.latency.items():
                 if not values:
@@ -112,13 +172,80 @@ class _Store:
                 n = len(arr)
                 p50 = _nearest_rank(arr, 50)
                 p95 = _nearest_rank(arr, 95)
+                p99 = _nearest_rank(arr, 99)  # NOUVEAU
                 avg = sum(arr) / n
                 latency_out[key] = {
                     "count": n,
                     "p50_ms": int(p50),
                     "p95_ms": int(p95),
+                    "p99_ms": int(p99),  # NOUVEAU
                     "avg_ms": int(round(avg)),
                 }
+
+            # Durées par étape pipeline
+            pipeline_out: Dict[str, Dict[str, float]] = {}
+            for step, values in self.pipeline_durations.items():
+                if not values:
+                    continue
+                arr = sorted(values)
+                n = len(arr)
+                p50 = _nearest_rank(arr, 50)
+                p95 = _nearest_rank(arr, 95)
+                p99 = _nearest_rank(arr, 99)
+                avg = sum(arr) / n
+                pipeline_out[step] = {
+                    "count": n,
+                    "p50_ms": int(p50),
+                    "p95_ms": int(p95),
+                    "p99_ms": int(p99),
+                    "avg_ms": int(round(avg)),
+                }
+
+            # Taux de fallback
+            fallback_out: Dict[str, Dict[str, float]] = {}
+            for key, counts in self.fallbacks.items():
+                total = counts.get("total_calls", 0)
+                fallback = counts.get("fallback_calls", 0)
+                rate = (fallback / total) if total else 0.0
+                fallback_out[key] = {
+                    "total_calls": total,
+                    "fallback_calls": fallback,
+                    "fallback_rate": round(rate, 3)
+                }
+
+            # Statistiques retry
+            retry_out: Dict[str, Dict[str, float]] = {}
+            for key, counts in self.retries.items():
+                retry_out[key] = {
+                    "total_retries": counts.get("total_retries", 0),
+                    "backoff_total_ms": counts.get("backoff_total_ms", 0)
+                }
+
+            # Métriques SSE agrégées
+            sse_sessions = list(self.sse_metrics.values())
+            sse_out = {
+                "total_sessions": len(sse_sessions),
+                "completed_sessions": len([s for s in sse_sessions if s["completed"]]),
+                "aborted_sessions": len([s for s in sse_sessions if s["aborted"]]),
+                "completion_rate": 0.0,
+                "abort_rate": 0.0,
+                "avg_ttfb_ms": 0,
+                "avg_events_per_session": 0.0
+            }
+            
+            if sse_sessions:
+                sse_out["completion_rate"] = round(sse_out["completed_sessions"] / len(sse_sessions), 3)
+                sse_out["abort_rate"] = round(sse_out["aborted_sessions"] / len(sse_sessions), 3)
+                sse_out["avg_events_per_session"] = round(sum(s["events_count"] for s in sse_sessions) / len(sse_sessions), 1)
+                
+                # TTFB moyen
+                ttfb_values = []
+                for s in sse_sessions:
+                    if s["first_event_at"] and s["started_at"]:
+                        ttfb_ms = int((s["first_event_at"] - s["started_at"]) * 1000)
+                        ttfb_values.append(ttfb_ms)
+                if ttfb_values:
+                    sse_out["avg_ttfb_ms"] = int(sum(ttfb_values) / len(ttfb_values))
 
             errors_out = {k: dict(v) for k, v in self.errors.items()}
 
@@ -127,6 +254,10 @@ class _Store:
                 "uptime_s": round(time.time() - self.started_at, 1),       # durée
                 "availability": availability_out,
                 "latency": latency_out,
+                "pipeline_durations": pipeline_out,  
+                "fallbacks": fallback_out,           
+                "retries": retry_out,                
+                "sse_quality": sse_out,              
                 "errors": errors_out,
                 "totals": dict(self.totals),
                 "last_seen": int(self.last_seen) if self.last_seen else None,  # unix s
@@ -146,7 +277,7 @@ _STORE = _Store()
 def _nearest_rank(arr: List[int], percentile: int) -> float:
     """
     Percentile "nearest rank" simple qui évite les libs externes.
-    Utile ici pour p50/p95 sur un petit volume de points.
+    Utile ici pour p50/p95/p99 sur un petit volume de points.
     """
     if not arr:
         return 0.0
@@ -214,9 +345,64 @@ def _load_metrics_jsonl_into_store() -> None:
         pass
 
 
+# NOUVELLES FONCTIONS D'API
+
+def metric_pipeline_duration(step: str, duration_ms: int) -> None:
+    """Enregistre la durée d'une étape du pipeline"""
+    if not _COLLECT_ENABLED:
+        return
+    _STORE.record_pipeline_duration(step, duration_ms)
+    logger.info(f"[PIPELINE] step={step} duration_ms={duration_ms}")
+
+def metric_fallback(provider: str, op: str, attempt: int) -> None:
+    """Enregistre une tentative avec info de fallback"""
+    if not _COLLECT_ENABLED:
+        return
+    _STORE.record_fallback(provider, op, attempt)
+    if attempt > 1:
+        logger.info(f"[FALLBACK] provider={provider} op={op} attempt={attempt}")
+
+def metric_retry(provider: str, op: str, retry_count: int, backoff_ms: int) -> None:
+    """Enregistre des statistiques de retry"""
+    if not _COLLECT_ENABLED:
+        return
+    _STORE.record_retry(provider, op, retry_count, backoff_ms)
+    logger.info(f"[RETRY] provider={provider} op={op} retries={retry_count} backoff_ms={backoff_ms}")
+
+def metric_sse_start(session_id: str) -> None:
+    """Démarre le tracking d'une session SSE"""
+    if not _COLLECT_ENABLED:
+        return
+    _STORE.record_sse_start(session_id)
+
+def metric_sse_first_event(session_id: str) -> None:
+    """Enregistre le premier événement SSE (TTFB)"""
+    if not _COLLECT_ENABLED:
+        return
+    _STORE.record_sse_first_event(session_id)
+
+def metric_sse_event(session_id: str) -> None:
+    """Enregistre un événement SSE"""
+    if not _COLLECT_ENABLED:
+        return
+    _STORE.record_sse_event(session_id)
+
+def metric_sse_complete(session_id: str) -> None:
+    """Marque une session SSE comme complétée"""
+    if not _COLLECT_ENABLED:
+        return
+    _STORE.record_sse_complete(session_id)
+
+def metric_sse_abort(session_id: str) -> None:
+    """Marque une session SSE comme abandonnée"""
+    if not _COLLECT_ENABLED:
+        return
+    _STORE.record_sse_abort(session_id)
+
+
 def metric_ok(provider: str, op: str, latency_ms: Optional[int] = None) -> None:
     """
-    API d’enregistrement de succès.
+    API d'enregistrement de succès.
     No-op si APP_ENV ∈ {test, ci}.
     """
     if not _COLLECT_ENABLED:
@@ -245,7 +431,7 @@ def metric_fail(
     provider: str, op: str, latency_ms: Optional[int] = None, reason: Optional[str] = None
 ) -> None:
     """
-    API d’enregistrement d’échec (avec raison si dispo).
+    API d'enregistrement d'échec (avec raison si dispo).
     No-op si APP_ENV ∈ {test, ci}.
     """
     if not _COLLECT_ENABLED:
@@ -280,7 +466,7 @@ class LogMetricsHandler(logging.Handler):
     """
     Handler optionnel : si on le branche sur un logger, il "écoute" les
     lignes contenant [METRIC] et ré-incrémente localement le _STORE.
-    Pratique si certaines métriques viennent d’autres modules/process via logs.
+    Pratique si certaines métriques viennent d'autres modules/process via logs.
     """
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -344,6 +530,10 @@ def record_dream_trace(
     has_image: bool,
     total_duration_ms: int,
     started_at_ts: float,
+    transcribe_ms: Optional[int] = None,
+    emotion_ms: Optional[int] = None,
+    image_ms: Optional[int] = None,
+    interpretation_ms: Optional[int] = None,
 ) -> None:
     """
     Enregistre une ligne "1 rêve = 1 ligne" dans .dev/dev_traces.jsonl (DEV).
@@ -361,6 +551,10 @@ def record_dream_trace(
         "has_image": bool(has_image),
         "total_duration_ms": int(total_duration_ms),
         "started_at": float(started_at_ts),
+        "transcribe_ms": transcribe_ms,
+        "emotion_ms": emotion_ms,
+        "image_ms": image_ms,
+        "interpretation_ms": interpretation_ms,
     }
     _append_jsonl(_TRACES_PATH, rec, max_lines=_MAX_TRACES)
 
