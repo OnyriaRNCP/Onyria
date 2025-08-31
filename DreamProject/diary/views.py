@@ -19,6 +19,9 @@ from .utils import (
     get_dream_type_timeline_filtered,
     get_emotions_stats_filtered,
     get_emotions_timeline_filtered,
+    get_themes_stats_filtered,
+    get_themes_timeline_filtered,
+    get_theme_distribution_by_emotion,
     format_emotion_label,
     format_dream_type_label,
     transcribe_audio,
@@ -293,7 +296,16 @@ def dream_followup(request):
     emotions_timeline, emotions_list = get_emotions_timeline_filtered(
         request.user, period, start_date, end_date
     )
-
+    themes_stats = get_themes_stats_filtered(
+        request.user, period, start_date, end_date
+    )
+    themes_timeline, themes_list = get_themes_timeline_filtered(
+        request.user, period, start_date, end_date
+    )
+    theme_emotion_distribution = get_theme_distribution_by_emotion(
+        request.user, period, start_date, end_date
+    )
+    
     # Formatage des émotions avec les labels français
     formatted_emotions_stats = {}
     if emotions_stats['percentages']:
@@ -327,6 +339,10 @@ def dream_followup(request):
         'emotions_stats': formatted_emotions_stats,
         'emotions_timeline': emotions_timeline,
         'emotions_list': formatted_emotions_list,
+        'themes_stats': themes_stats,
+        'themes_timeline': themes_timeline,
+        'themes_list': themes_list,
+        'theme_emotion_distribution': theme_emotion_distribution,
         'has_data': dream_type_stats['total'] > 0,
         'current_period': period,
         'current_start_date': start_date,
