@@ -116,110 +116,113 @@ def analyse_from_voice(request):
     """Version SSE (Server-Sent Events) de analyse_from_voice pour affichage progressif des éléments"""
     
     def event_stream():
-        start_time = time.time()
-        dream = None  # suivi du rêve provisoire pour pouvoir le supprimer en cas d'échec critique
-        try:
-            if 'audio' not in request.FILES:
-                logger.error("Analyse SSE: aucun fichier audio reçu")
-                yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
-                return
-
-            audio_file = request.FILES['audio']
-            audio_data = audio_file.read()
-            logger.info(f"Analyse SSE user {request.user.id} démarrée - {len(audio_data)} bytes")
-
-            # Transcription
-            transcription = transcribe_audio(audio_data)
-            if not transcription:
-                logger.error("Analyse SSE: échec transcription")
-                yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
-                return
-            yield f"data: {json.dumps({'step': 'transcription', 'data': {'transcription': transcription}})}\n\n"
-
-            # Émotions
-            emotions, dominant_emotion = analyze_emotions(transcription)
-            if emotions is None:
-                logger.error("Analyse SSE: échec analyse émotionnelle")
-                yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
-                return
-            dream_type = classify_dream(emotions)
-
-            # format "clé brute" (ex: 'joie', 'rêve') -> labels FR
-            raw_dominant_key = dominant_emotion[0] if isinstance(dominant_emotion, (list, tuple)) else dominant_emotion
-            formatted_dominant_emotion = format_emotion_label(raw_dominant_key)
-            formatted_dream_type = format_dream_type_label(dream_type)
-
-            # Contrat SSE : renvoyer des strings (ex: 'Joie', 'Rêve')
-            yield f"data: {json.dumps({'step': 'emotions', 'data': {'dominant_emotion': formatted_dominant_emotion, 'dream_type': formatted_dream_type}})}\n\n"
-
-            # Sauvegarde (créer le rêve d'abord pour avoir l'ID)
-            dream = Dream.objects.create(
-                user=request.user,
-                transcription=transcription,
-                emotions=emotions,
-                dominant_emotion=raw_dominant_key,
-                dream_type=dream_type,
-                interpretation={},  # Vide pour l'instant
-                is_analyzed=True,
-            )
-            logger.debug(f"Rêve {dream.id} créé")
-
-            # Image
-            image_success = generate_image_from_text(request.user, transcription, dream)
-            if image_success:
-                dream.refresh_from_db()
-                if dream.image_url:
-                    logger.info(f"Image envoyée via SSE pour rêve {dream.id}")
-                    yield f"data: {json.dumps({'step': 'image', 'data': {'image_path': dream.image_url}})}\n\n"
-                else:
-                    logger.warning(f"Image générée mais URL manquante pour rêve {dream.id}")
-                    yield f"data: {json.dumps({'step': 'image', 'data': {'image_path': None}})}\n\n"
-            else:
-                logger.warning(f"Échec génération image pour rêve {dream.id}")
-                yield f"data: {json.dumps({'step': 'image', 'data': {'image_path': None}})}\n\n"
-
-            # Interprétation
-            interpretation = interpret_dream(transcription)
-            if interpretation is None:
-                logger.error("Analyse SSE: échec interprétation")
-                # En cas d'échec critique, ne conserver AUCUN rêve
-                try:
-                    if dream is not None:
-                        dream.delete()
-                except Exception:
-                    pass
-                yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
-                return
-
-            # Mettre à jour le rêve avec l'interprétation
-            dream.interpretation = interpretation
-            dream.save()
-
-            # Envoyer l'interprétation
-            yield f"data: {json.dumps({'step': 'interpretation', 'data': {'interpretation': interpretation}})}\n\n"
-
-            total_duration = time.time() - start_time
-            if total_duration > settings.AI_CONFIG['SSE_SLOW_WARNING_THRESHOLD']:
-                logger.warning(f"Analyse SSE lente: {total_duration:.2f}s pour user {request.user.id}")
-            
-            logger.info(f"Analyse SSE user {request.user.id} réussie - Type: {dream_type}, Émotion: {raw_dominant_key} en {total_duration:.2f}s")
-            # Succès explicite pour les tests (image peut échouer sans bloquer)
-            yield f"data: {json.dumps({'step': 'complete', 'success': True})}\n\n"
-
-        except Exception as e:
-            duration = time.time() - start_time if 'start_time' in locals() else 0
-            logger.error(f"Erreur analyse SSE user {request.user.id} après {duration:.2f}s: {e}")
-            # Sécurité : si un rêve provisoire existe, le supprimer pour ne rien laisser en cas d'échec global
-            try:
-                if 'dream' in locals() and dream is not None:
-                    dream.delete()
-            except Exception:
-                pass
+    start_time = time.time()
+    dream = None
+    try:
+        if 'audio' not in request.FILES:
+            logger.error("Analyse SSE: aucun fichier audio reçu")
             yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
+            return
 
-    response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
-    response['Cache-Control'] = 'no-cache'
-    return response
+        audio_file = request.FILES['audio']
+        audio_data = audio_file.read()
+        logger.info(f"Analyse SSE user {request.user.id} démarrée - {len(audio_data)} bytes")
+
+        # Transcription
+        transcription = transcribe_audio(audio_data)
+        if not transcription:
+            logger.error("Analyse SSE: échec transcription")
+            yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
+            return
+        yield f"data: {json.dumps({'step': 'transcription', 'data': {'transcription': transcription}})}\n\n"
+
+        # Émotions
+        emotions, dominant_emotion = analyze_emotions(transcription)
+        if emotions is None:
+            logger.error("Analyse SSE: échec analyse émotionnelle")
+            yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
+            return
+        
+        dream_type = classify_dream(emotions)
+        raw_dominant_key = dominant_emotion[0] if isinstance(dominant_emotion, (list, tuple)) else dominant_emotion
+        formatted_dominant_emotion = format_emotion_label(raw_dominant_key)
+        formatted_dream_type = format_dream_type_label(dream_type)
+
+        yield f"data: {json.dumps({'step': 'emotions', 'data': {'dominant_emotion': formatted_dominant_emotion, 'dream_type': formatted_dream_type}})}\n\n"
+
+        # Sauvegarde
+        dream = Dream.objects.create(
+            user=request.user,
+            transcription=transcription,
+            emotions=emotions,
+            dominant_emotion=raw_dominant_key,
+            dream_type=dream_type,
+            interpretation={},
+            is_analyzed=True,
+        )
+        logger.debug(f"Rêve {dream.id} créé")
+
+        # Image
+        image_success = generate_image_from_text(request.user, transcription, dream)
+        if image_success:
+            dream.refresh_from_db()
+            if dream.image_url:
+                logger.info(f"Image envoyée via SSE pour rêve {dream.id}")
+                yield f"data: {json.dumps({'step': 'image', 'data': {'image_path': dream.image_url}})}\n\n"
+            else:
+                logger.warning(f"Image générée mais URL manquante pour rêve {dream.id}")
+                yield f"data: {json.dumps({'step': 'image', 'data': {'image_path': None}})}\n\n"
+        else:
+            logger.warning(f"Échec génération image pour rêve {dream.id}")
+            yield f"data: {json.dumps({'step': 'image', 'data': {'image_path': None}})}\n\n"
+
+        # Interprétation
+        interpretation = interpret_dream(transcription)
+        if interpretation is None:
+            logger.error("Analyse SSE: échec interprétation")
+            # Cleanup avec gestion d'erreur spécifique
+            _safe_cleanup_dream(dream, "échec interprétation")
+            yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
+            return
+
+        # Mise à jour avec interprétation
+        dream.interpretation = interpretation
+        dream.save()
+
+        yield f"data: {json.dumps({'step': 'interpretation', 'data': {'interpretation': interpretation}})}\n\n"
+
+        total_duration = time.time() - start_time
+        if total_duration > settings.AI_CONFIG['SSE_SLOW_WARNING_THRESHOLD']:
+            logger.warning(f"Analyse SSE lente: {total_duration:.2f}s pour user {request.user.id}")
+        
+        logger.info(f"Analyse SSE user {request.user.id} réussie - Type: {dream_type}, Émotion: {raw_dominant_key} en {total_duration:.2f}s")
+        yield f"data: {json.dumps({'step': 'complete', 'success': True})}\n\n"
+
+    except Exception as e:
+        duration = time.time() - start_time if 'start_time' in locals() else 0
+        logger.error(f"Erreur analyse SSE user {request.user.id} après {duration:.2f}s: {e}")
+        
+        # Cleanup avec gestion d'erreur spécifique
+        _safe_cleanup_dream(dream, f"exception globale: {e}")
+        yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
+
+
+def _safe_cleanup_dream(dream, reason="erreur"):
+    """
+    Supprime un rêve en toute sécurité avec logging approprié.
+    Fonction utilitaire pour éviter les try/except/pass.
+    """
+    if dream is None:
+        return
+    
+    try:
+        dream_id = dream.id
+        dream.delete()
+        logger.info(f"Rêve {dream_id} supprimé après {reason}")
+    except Dream.ProtectedError as e:
+        logger.error(f"Impossible de supprimer le rêve (contraintes FK): {e}")
+    except Exception as e:
+        logger.error(f"Erreur inattendue lors de suppression du rêve: {e}")
 
 
 @login_required
