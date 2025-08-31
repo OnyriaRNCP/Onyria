@@ -8,14 +8,17 @@ Usage: python manage.py test diary.tests.test_security
 from django.test import TestCase, Client
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+
 import tempfile
 import re
 import os
 
+from ..models import Dream
+from ..utils import analyze_recurring_themes
+
 User = get_user_model()
 
 TEST_USER_PASSWORD = os.environ.get('TEST_PASSWORD', 'django_test_secure_2024')
-
 
 
 class SecurityTests(TestCase):
@@ -23,13 +26,15 @@ class SecurityTests(TestCase):
         self.user = User.objects.create_user(
             email='security@test.com',
             username='secuser',
-            password=TEST_USER_PASSWORD
+            password=TEST_USER_PASSWORD,
         )
         self.client = Client()
 
     def test_sql_injection_protection(self):
         """Test protection contre l'injection SQL"""
-        self.client.login(email='security@test.com', password=TEST_USER_PASSWORD)
+        self.client.login(
+            email='security@test.com', password=TEST_USER_PASSWORD
+        )
 
         # Tentative d'injection dans les paramètres
         malicious_data = "'; DROP TABLE diary_dream; --"
@@ -49,7 +54,9 @@ class SecurityTests(TestCase):
         """
         from ..models import Dream
 
-        self.client.login(email='security@test.com', password=TEST_USER_PASSWORD)
+        self.client.login(
+            email='security@test.com', password=TEST_USER_PASSWORD
+        )
 
         #  PAYLOAD MALVEILLANT SPÉCIFIQUE
         malicious_content = "<script>alert('XSS Attack!')</script>"
@@ -139,7 +146,9 @@ class SecurityTests(TestCase):
             user=other_user, transcription="Rêve privé de l'autre utilisateur"
         )
 
-        self.client.login(email='security@test.com', password=TEST_USER_PASSWORD)
+        self.client.login(
+            email='security@test.com', password=TEST_USER_PASSWORD
+        )
 
         # Tentative d'accès direct par ID
         response = self.client.get(f'/diary/dream/{other_dream.id}/')
@@ -153,7 +162,9 @@ class SecurityTests(TestCase):
         """
         from ..models import Dream
 
-        self.client.login(email='security@test.com', password=TEST_USER_PASSWORD)
+        self.client.login(
+            email='security@test.com', password=TEST_USER_PASSWORD
+        )
 
         # Créer un rêve avec interprétation malveillante
         dream = Dream.objects.create(
@@ -195,3 +206,68 @@ class SecurityTests(TestCase):
         self.assertIn("Autre analyse", content)
 
         print(" Champ interprétation protégé contre XSS")
+
+    def test_theme_analysis_xss_protection(self):
+        """
+        Test protection contre XSS dans l'analyse thématique.
+        """
+        # Créer des rêves avec contenu potentiellement malveillant
+        malicious_dreams = [
+            "<script>alert('XSS')</script> Je volais dans le ciel",
+            "J'ai rêvé de <img src=x onerror=alert('hack')> voler",
+            "Dans mon rêve javascript:alert('test') je volais",
+            "Je volais <iframe src='evil.com'></iframe> dans l'espace",
+            "Vol dans le ciel avec <object data='malware'></object>",
+        ]
+
+        for text in malicious_dreams:
+            Dream.objects.create(
+                user=self.user,
+                transcription=text,
+                dream_type="rêve",
+                dominant_emotion="joie",
+            )
+
+        # L'analyse ne doit pas planter et doit nettoyer le contenu
+        result = analyze_recurring_themes(self.user)
+
+        self.assertIsInstance(result, dict)
+        self.assertIn('top_theme', result)
+
+        # Le thème ne doit pas contenir de balises HTML
+        theme = result['top_theme']
+        dangerous_tags = [
+            '<script',
+            '<img',
+            '<iframe',
+            '<object',
+            'javascript:',
+        ]
+        for tag in dangerous_tags:
+            self.assertNotIn(tag, theme.lower())
+
+    def test_theme_analysis_sql_injection_protection(self):
+        """
+        Test protection contre injection SQL via contenu des rêves.
+        """
+        sql_injections = [
+            "'; DROP TABLE diary_dream; --",
+            "UNION SELECT * FROM auth_user",
+            "' OR '1'='1' --",
+            "); DELETE FROM django_session; --",
+        ]
+
+        for injection in sql_injections:
+            Dream.objects.create(
+                user=self.user,
+                transcription=f"Je rêvais de {injection} et puis je volais",
+                dream_type="rêve",
+            )
+
+        # L'analyse doit fonctionner sans corrompre la DB
+        result = analyze_recurring_themes(self.user)
+        self.assertIsInstance(result, dict)
+
+        # Vérifier que les données sont intactes
+        dream_count = Dream.objects.filter(user=self.user).count()
+        self.assertEqual(dream_count, 4)
