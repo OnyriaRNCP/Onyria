@@ -19,11 +19,13 @@ from .utils import (
     get_dream_type_timeline_filtered,
     get_emotions_stats_filtered,
     get_emotions_timeline_filtered,
+    get_themes_stats_filtered,
+    get_themes_timeline_filtered,
     format_emotion_label,
     format_dream_type_label,
     transcribe_audio,
 )
-from .constants import EMOTION_LABELS, DREAM_TYPE_LABELS, DREAM_ERROR_MESSAGE
+from .constants import EMOTION_LABELS, DREAM_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +52,6 @@ def dream_diary_view(request):
     if statut_reveuse:
         stats['statut_reveuse'] = format_dream_type_label(statut_reveuse)
 
-
     return render(
         request,
         'diary/dream_diary.html',
@@ -59,6 +60,7 @@ def dream_diary_view(request):
             **stats,  # déstructure les clés du dict `stats` directement dans le contexte
         },
     )
+
 
 @login_required
 @require_POST
@@ -70,7 +72,9 @@ def delete_dream(request, dream_id):
     except Dream.DoesNotExist:
         return JsonResponse({'error': 'Rêve introuvable'}, status=404)
     except Exception as e:
-        return JsonResponse({'error': 'Erreur lors de la suppression'}, status=500)
+        return JsonResponse(
+            {'error': 'Erreur lors de la suppression'}, status=500
+        )
 
 
 @login_required
@@ -80,7 +84,9 @@ def dream_detail_view(request, dream_id):
 
     # Formatage des labels pour l'affichage
     if dream.dominant_emotion:
-        formatted_dominant_emotion = format_emotion_label(dream.dominant_emotion)
+        formatted_dominant_emotion = format_emotion_label(
+            dream.dominant_emotion
+        )
         formatted_dream_type = format_dream_type_label(dream.dream_type)
     else:
         formatted_dominant_emotion = "Non analysé"
@@ -107,9 +113,11 @@ def dream_detail_view(request, dream_id):
 @login_required
 def dream_recorder_view(request):
     """Page d'enregistrement vocal du rêve"""
-    return render(request, 'diary/dream_recorder.html', {
-        'DREAM_ERROR_MESSAGE': DREAM_ERROR_MESSAGE
-    })
+    return render(
+        request,
+        'diary/dream_recorder.html',
+        {'DREAM_ERROR_MESSAGE': DREAM_ERROR_MESSAGE},
+    )
 
 
 @require_http_methods(["POST"])
@@ -117,7 +125,7 @@ def dream_recorder_view(request):
 @csrf_exempt
 def analyse_from_voice(request):
     """Version SSE (Server-Sent Events) de analyse_from_voice pour affichage progressif des éléments"""
-    
+
     def event_stream():
         start_time = time.time()
         dream = None  # suivi du rêve provisoire pour pouvoir le supprimer en cas d'échec critique
@@ -129,7 +137,9 @@ def analyse_from_voice(request):
 
             audio_file = request.FILES['audio']
             audio_data = audio_file.read()
-            logger.info(f"Analyse SSE user {request.user.id} démarrée - {len(audio_data)} bytes")
+            logger.info(
+                f"Analyse SSE user {request.user.id} démarrée - {len(audio_data)} bytes"
+            )
 
             # Transcription
             transcription = transcribe_audio(audio_data)
@@ -148,7 +158,11 @@ def analyse_from_voice(request):
             dream_type = classify_dream(emotions)
 
             # format "clé brute" (ex: 'joie', 'rêve') -> labels FR
-            raw_dominant_key = dominant_emotion[0] if isinstance(dominant_emotion, (list, tuple)) else dominant_emotion
+            raw_dominant_key = (
+                dominant_emotion[0]
+                if isinstance(dominant_emotion, (list, tuple))
+                else dominant_emotion
+            )
             formatted_dominant_emotion = format_emotion_label(raw_dominant_key)
             formatted_dream_type = format_dream_type_label(dream_type)
 
@@ -168,14 +182,18 @@ def analyse_from_voice(request):
             logger.debug(f"Rêve {dream.id} créé")
 
             # Image
-            image_success = generate_image_from_text(request.user, transcription, dream)
+            image_success = generate_image_from_text(
+                request.user, transcription, dream
+            )
             if image_success:
                 dream.refresh_from_db()
                 if dream.image_url:
                     logger.info(f"Image envoyée via SSE pour rêve {dream.id}")
                     yield f"data: {json.dumps({'step': 'image', 'data': {'image_path': dream.image_url}})}\n\n"
                 else:
-                    logger.warning(f"Image générée mais URL manquante pour rêve {dream.id}")
+                    logger.warning(
+                        f"Image générée mais URL manquante pour rêve {dream.id}"
+                    )
                     yield f"data: {json.dumps({'step': 'image', 'data': {'image_path': None}})}\n\n"
             else:
                 logger.warning(f"Échec génération image pour rêve {dream.id}")
@@ -227,8 +245,12 @@ def analyse_from_voice(request):
             yield f"data: {json.dumps({'step': 'complete', 'success': True})}\n\n"
 
         except Exception as e:
-            duration = time.time() - start_time if 'start_time' in locals() else 0
-            logger.error(f"Erreur analyse SSE user {request.user.id} après {duration:.2f}s: {e}")
+            duration = (
+                time.time() - start_time if 'start_time' in locals() else 0
+            )
+            logger.error(
+                f"Erreur analyse SSE user {request.user.id} après {duration:.2f}s: {e}"
+            )
             # Sécurité : si un rêve provisoire existe, le supprimer pour ne rien laisser en cas d'échec global
             try:
                 if 'dream' in locals() and dream is not None:
@@ -237,9 +259,29 @@ def analyse_from_voice(request):
                 pass
             yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
 
-    response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
+    response = StreamingHttpResponse(
+        event_stream(), content_type='text/event-stream'
+    )
     response['Cache-Control'] = 'no-cache'
     return response
+
+
+def _safe_cleanup_dream(dream, reason="erreur"):
+    """
+    Supprime un rêve en toute sécurité avec logging approprié.
+    Fonction utilitaire pour éviter les try/except/pass.
+    """
+    if dream is None:
+        return
+
+    try:
+        dream_id = dream.id
+        dream.delete()
+        logger.info(f"Rêve {dream_id} supprimé après {reason}")
+    except Dream.ProtectedError as e:
+        logger.error(f"Impossible de supprimer le rêve (contraintes FK): {e}")
+    except Exception as e:
+        logger.error(f"Erreur inattendue lors de suppression du rêve: {e}")
 
 
 @login_required
@@ -266,7 +308,24 @@ def dream_followup(request):
     emotions_timeline, emotions_list = get_emotions_timeline_filtered(
         request.user, period, start_date, end_date
     )
-
+    
+    # ✅ HARMONISATION : Récupérer d'abord les stats thématiques (source unique)
+    themes_stats = get_themes_stats_filtered(
+        request.user, period, start_date, end_date
+    )
+    
+    # ✅ HARMONISATION : Utiliser la liste de thèmes des stats pour la timeline
+    if themes_stats['has_data']:
+        themes_timeline, themes_list = get_themes_timeline_filtered(
+            request.user, period, start_date, end_date
+        )
+        # S'assurer que themes_list correspond à celui des stats
+        themes_list = themes_stats.get('themes_list', themes_list)
+        logger.info(f"Thèmes harmonisés: {len(themes_list)} thèmes cohérents entre graphiques")
+    else:
+        themes_timeline, themes_list = [], []
+        logger.info("Pas de données thématiques - graphiques vides")
+    
     # Formatage des émotions avec les labels français
     formatted_emotions_stats = {}
     if emotions_stats['percentages']:
@@ -290,7 +349,9 @@ def dream_followup(request):
     # Calcul de la plage de dates pour l'affichage
     date_range_info = get_date_range_display(period, start_date, end_date)
 
-    logger.debug(f"Dashboard user {request.user.id} - {dream_type_stats['total']} rêves")
+    logger.debug(
+        f"Dashboard user {request.user.id} - {dream_type_stats['total']} rêves, {len(themes_list)} thèmes harmonisés"
+    )
 
     context = {
         'dream_type_stats': dream_type_stats,
@@ -298,11 +359,19 @@ def dream_followup(request):
         'emotions_stats': formatted_emotions_stats,
         'emotions_timeline': emotions_timeline,
         'emotions_list': formatted_emotions_list,
+        'themes_stats': themes_stats,
+        'themes_timeline': themes_timeline,
+        'themes_list': themes_list,
         'has_data': dream_type_stats['total'] > 0,
         'current_period': period,
         'current_start_date': start_date,
         'current_end_date': end_date,
         'date_range_display': date_range_info,
+        'themes_debug': {
+            'method': themes_stats.get('method', 'Aucun'),
+            'total_themes_found': len(themes_stats.get('themes', {})),
+            'has_timeline_data': len(themes_timeline) > 0,
+        } if themes_stats['has_data'] else {}
     }
 
     return render(request, 'diary/dream_followup.html', context)

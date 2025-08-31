@@ -83,9 +83,15 @@
     <!-- Thématique récurrente -->
     <div class="text-center pastel-champagne mb-6">
       <h2 class="text-xs sm:text-sm md:text-base font-normal">Thématique récurrente</h2>
-      <p class="text-sm sm:text-base md:text-lg font-semibold text-black">À venir...</p>
+      <p class="text-sm sm:text-base md:text-lg font-semibold text-black">{{ thematique_recurrente }}</p>
+      <p class="text-xs sm:text-xs md:text-sm text-gray-500 mt-1">
+        {% if thematique_percentage > 0 %}
+          dans {{ thematique_percentage }}% des rêves
+        {% else %}
+          &nbsp;
+        {% endif %}
+      </p>
     </div>
-
 </div>
 
 <!-- Séparateur -->

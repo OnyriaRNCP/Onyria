@@ -18,6 +18,7 @@ import json
 import time
 import tempfile
 import socket
+import os
 
 from ..models import Dream
 from ..utils import (
@@ -26,6 +27,8 @@ from ..utils import (
 )
 
 User = get_user_model()
+
+TEST_USER_PASSWORD = os.environ.get('TEST_PASSWORD', 'django_test_secure_2024')
 
 
 class TranscriptionTest(TestCase):
@@ -544,7 +547,7 @@ class ImageGenerationTest(TestCase):
         self.user = User.objects.create_user(
             email='test_images@example.com',
             username='test_images',
-            password='testpass123'
+            password=TEST_USER_PASSWORD,
         )
 
     @patch('diary.utils.mistral_client')

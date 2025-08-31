@@ -1,43 +1,126 @@
 import os
 import json
+import sys
+import re
 import math
 import time
 import tempfile
 import logging
 import httpx
 import random
+import nltk
+import spacy
+import unicodedata
+from typing import List, Dict
 from datetime import datetime, timedelta
 from django.utils import timezone
 from django.core.files.base import ContentFile
 from django.db.models import Count
 from django.db.models.functions import TruncDate
 from django.conf import settings
+from dotenv import load_dotenv
 from groq import Groq
 from mistralai import Mistral
-from collections import Counter
-from .models import Dream
-import unicodedata
-from typing import Any, Mapping, Optional
-from .constants import EMOTION_LABELS, DREAM_TYPE_LABELS
-
-# --- AJOUT métriques ---
 from .metrics.runtime import metric_ok, metric_fail
-# -----------------------
+from nltk.corpus import stopwords
+from nltk.stem import SnowballStemmer
+from bertopic import BERTopic
+from sklearn.feature_extraction.text import CountVectorizer
+from sentence_transformers import SentenceTransformer
+from umap import UMAP
+from hdbscan import HDBSCAN
+from collections import Counter, defaultdict
+from .models import Dream
+from typing import Any, Mapping, Optional
+from .constants import (
+    EMOTION_LABELS,
+    DREAM_TYPE_LABELS,
+    THEME_CATEGORIES,
+    DREAM_SPECIFIC_STOPWORDS,
+)
 
-# Configuration du logging professionnel
+# Chargement des variables d'environnement
+load_dotenv()
+
+# Logs
 logger = logging.getLogger(__name__)
+
 
 # Récupération de la configuration centralisée
 AI_CONFIG = settings.AI_CONFIG
 BASE_DIR = settings.BASE_DIR
 
 # Clients externes avec garde-fou contre les clés manquantes
-groq_client = Groq(
-    api_key=settings.GROQ_API_KEY,
-    http_client=httpx.Client(http2=False, timeout=AI_CONFIG['API_TIMEOUT'])
-) if settings.GROQ_API_KEY else None
+groq_client = (
+    Groq(
+        api_key=settings.GROQ_API_KEY,
+        http_client=httpx.Client(
+            http2=False, timeout=AI_CONFIG['API_TIMEOUT']
+        ),
+    )
+    if settings.GROQ_API_KEY
+    else None
+)
 
-mistral_client = Mistral(api_key=settings.MISTRAL_API_KEY) if settings.MISTRAL_API_KEY else None
+mistral_client = (
+    Mistral(api_key=settings.MISTRAL_API_KEY)
+    if settings.MISTRAL_API_KEY
+    else None
+)
+
+#Config pour analyse thématique
+try:
+    nlp = spacy.load("fr_core_news_sm")
+except OSError:
+    logger.warning(
+        "Modèle spaCy français non trouvé. Installer avec: python -m spacy download fr_core_news_sm"
+    )
+    nlp = None
+
+try:
+    nltk.download('stopwords', quiet=True)
+    FRENCH_STOPWORDS = set(stopwords.words('french'))
+    stemmer = SnowballStemmer('french')
+except ImportError:
+    logger.warning("NLTK non disponible. Installer avec: pip install nltk")
+    FRENCH_STOPWORDS = set()
+    stemmer = None
+
+# Configuration BERTopic
+try:
+    # Modèle de sentence embeddings multilingue optimisé pour le français
+    embedding_model = SentenceTransformer(
+        'paraphrase-multilingual-MiniLM-L12-v2'
+    )
+
+    # Vectorizer personnalisé pour filtrer les mots non significatifs
+    vectorizer_model = CountVectorizer(
+        ngram_range=(1, 2),  # Unigrammes et bigrammes
+        stop_words=list(FRENCH_STOPWORDS) if FRENCH_STOPWORDS else None,
+        min_df=2,  # Au moins 2 occurrences
+        max_df=0.8,  # Maximum 80% des documents
+        vocabulary=None,
+    )
+
+    # Configuration BERTopic pour les rêves
+    bertopic_model = BERTopic(
+        embedding_model=embedding_model,
+        vectorizer_model=vectorizer_model,
+        min_topic_size=2,  # Minimum 2 rêves pour créer un thème
+        nr_topics='auto',  # Nombre automatique de thèmes
+        calculate_probabilities=True,
+        language="french",
+    )
+
+    logger.info("BERTopic configuré avec succès")
+    BERTOPIC_AVAILABLE = True
+
+except ImportError:
+    logger.warning(
+        "BERTopic non disponible. Installer avec: pip install bertopic sentence-transformers"
+    )
+    BERTOPIC_AVAILABLE = False
+    bertopic_model = None
 
 # ---------- FONCTIONS UTILITAIRES ----------
 
@@ -75,7 +158,9 @@ def validate_and_fix_interpretation(interpretation_data):
     ]
     fixed_interpretation = {}
 
-    logger.debug(f"Validation interprétation - Clés reçues: {list(interpretation_data.keys())}")
+    logger.debug(
+        f"Validation interprétation - Clés reçues: {list(interpretation_data.keys())}"
+    )
 
     for key in expected_keys:
         if key in interpretation_data:
@@ -98,7 +183,9 @@ def validate_and_fix_interpretation(interpretation_data):
             else:
                 # Coercition robuste en chaîne
                 fixed_interpretation[key] = _to_str(value)
-                logger.warning(f"Conversion forcée en string pour {key}: {type(value)}")
+                logger.warning(
+                    f"Conversion forcée en string pour {key}: {type(value)}"
+                )
 
         else:
             # Clé manquante, ajouter un placeholder explicite
@@ -110,13 +197,24 @@ def validate_and_fix_interpretation(interpretation_data):
 
 # ---------- SYSTÈME DE RETRY ----------
 
+
 def _is_retryable_transcription_error(err: Exception) -> bool:
     """Détecte les erreurs réseau/temporaires qui méritent un retry"""
     msg = str(err).lower()
     keywords = [
-        "connection error", "connection reset", "connection aborted",
-        "timeout", "temporarily unavailable", "service unavailable",
-        "tls", "ssl", "proxy", "rate limit", "503", "502", "429",
+        "connection error",
+        "connection reset",
+        "connection aborted",
+        "timeout",
+        "temporarily unavailable",
+        "service unavailable",
+        "tls",
+        "ssl",
+        "proxy",
+        "rate limit",
+        "503",
+        "502",
+        "429",
     ]
     return any(k in msg for k in keywords)
 
@@ -146,9 +244,15 @@ def _transcribe_via_httpx(file_path: str, language: str = "fr") -> str | None:
     try:
         with open(file_path, "rb") as f:
             files = {"file": ("audio.wav", f, "audio/wav")}
-            timeout = httpx.Timeout(connect=15.0, read=180.0, write=60.0, pool=60.0)
-            limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
-            with httpx.Client(http2=False, timeout=timeout, limits=limits, trust_env=True) as client:
+            timeout = httpx.Timeout(
+                connect=15.0, read=180.0, write=60.0, pool=60.0
+            )
+            limits = httpx.Limits(
+                max_keepalive_connections=5, max_connections=10
+            )
+            with httpx.Client(
+                http2=False, timeout=timeout, limits=limits, trust_env=True
+            ) as client:
                 r = client.post(url, headers=headers, data=data, files=files)
                 r.raise_for_status()
                 payload = r.json()
@@ -174,18 +278,22 @@ def transcribe_audio(audio_data, language="fr"):
         logger.error("Échec transcription audio: GROQ_API_KEY manquante ou client non initialisé")
         metric_fail("groq", "transcribe", int((time.time() - start_time) * 1000), reason="no_api_key")
         return None
-    
+
     temp_file_path = None
     last_error = None
     try:
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+        with tempfile.NamedTemporaryFile(
+            suffix='.wav', delete=False
+        ) as temp_file:
             temp_file.write(audio_data)
             temp_file_path = temp_file.name
 
         # Système de retry avec backoff exponentiel et configuration centralisée
         for attempt in range(1, AI_CONFIG['TRANSCRIBE_MAX_RETRIES'] + 1):
             try:
-                logger.info(f"Transcription tentative {attempt}/{AI_CONFIG['TRANSCRIBE_MAX_RETRIES']}")
+                logger.info(
+                    f"Transcription tentative {attempt}/{AI_CONFIG['TRANSCRIBE_MAX_RETRIES']}"
+                )
                 with open(temp_file_path, "rb") as audio_file:
                     transcription = groq_client.audio.transcriptions.create(
                         file=audio_file,
@@ -198,7 +306,7 @@ def transcribe_audio(audio_data, language="fr"):
                     )
 
                 duration = time.time() - start_time
-                
+
                 # Alertes sur contenu problématique
                 if len(transcription.text) < 10:
                     logger.warning(f"Transcription très courte: {len(transcription.text)} caractères")
@@ -210,19 +318,28 @@ def transcribe_audio(audio_data, language="fr"):
 
             except Exception as e:
                 last_error = e
-                if _is_retryable_transcription_error(e) and attempt < AI_CONFIG['TRANSCRIBE_MAX_RETRIES']:
-                    sleep_s = round(AI_CONFIG['TRANSCRIBE_BACKOFF_BASE'] ** attempt, 2)
-                    logger.warning(f"Transcription erreur réseau (retry dans {sleep_s}s): {e}")
+                if (
+                    _is_retryable_transcription_error(e)
+                    and attempt < AI_CONFIG['TRANSCRIBE_MAX_RETRIES']
+                ):
+                    sleep_s = round(
+                        AI_CONFIG['TRANSCRIBE_BACKOFF_BASE'] ** attempt, 2
+                    )
+                    logger.warning(
+                        f"Transcription erreur réseau (retry dans {sleep_s}s): {e}"
+                    )
                     time.sleep(sleep_s)
                     continue
                 else:
-                    logger.error("Transcription error (%s): %s", type(e).__name__, e)
+                    logger.error(
+                        "Transcription error (%s): %s", type(e).__name__, e
+                    )
                     break
 
         # Fallback HTTPX en dernier recours
         logger.info("Tentative fallback HTTPX pour la transcription…")
         result = _transcribe_via_httpx(temp_file_path, language)
-        
+
         if result:
             duration = time.time() - start_time
             logger.info(f"Fallback HTTPX réussi en {duration:.2f}s")
@@ -248,7 +365,9 @@ def transcribe_audio(audio_data, language="fr"):
             try:
                 os.unlink(temp_file_path)
             except Exception as e:
-                logger.warning(f"Impossible de supprimer le fichier temporaire: {e}")
+                logger.warning(
+                    f"Impossible de supprimer le fichier temporaire: {e}"
+                )
 
 # ---------- SYSTÈME DE FALLBACK ----------
 
@@ -286,7 +405,9 @@ def safe_mistral_call(model, messages, operation="API call"):
         Response de l'API ou None si tous les fallbacks échouent
     """
     if mistral_client is None:
-        logger.error(f"[{operation}] Client Mistral non initialisé - MISTRAL_API_KEY manquante")
+        logger.error(
+            f"[{operation}] Client Mistral non initialisé - MISTRAL_API_KEY manquante"
+        )
         return None
 
     logger.info(f"[{operation}] Démarrage avec {model}")
@@ -307,13 +428,19 @@ def safe_mistral_call(model, messages, operation="API call"):
             attempt_duration = time.time() - attempt_start
 
             if attempt > 0:
-                logger.warning(f"[{operation}] Fallback utilisé: {current_model} en {attempt_duration:.2f}s")
+                logger.warning(
+                    f"[{operation}] Fallback utilisé: {current_model} en {attempt_duration:.2f}s"
+                )
             else:
-                logger.info(f"[{operation}] Succès avec {current_model} en {attempt_duration:.2f}s")
-            
+                logger.info(
+                    f"[{operation}] Succès avec {current_model} en {attempt_duration:.2f}s"
+                )
+
             # Alerte sur performance dégradée
             if attempt_duration > 10:
-                logger.warning(f"[{operation}] Performance dégradée: {attempt_duration:.2f}s")
+                logger.warning(
+                    f"[{operation}] Performance dégradée: {attempt_duration:.2f}s"
+                )
 
             return response
 
@@ -348,17 +475,23 @@ def safe_mistral_call(model, messages, operation="API call"):
                 elif "rate_limit" in merged_msg or status_code == 429:
                     logger.warning(f"[{operation}] RATE LIMIT - {current_model}")
                 else:
-                    logger.warning(f"[{operation}] Erreur {current_model}: {e}")
+                    logger.warning(
+                        f"[{operation}] Erreur {current_model}: {e}"
+                    )
 
                 if attempt == len(models_to_try) - 1:
                     total_duration = time.time() - start_time
-                    logger.error(f"[{operation}] Tous les fallbacks échoués après {total_duration:.2f}s")
+                    logger.error(
+                        f"[{operation}] Tous les fallbacks échoués après {total_duration:.2f}s"
+                    )
                     return None
 
                 time.sleep(wait)
                 continue
             else:
-                logger.error(f"[{operation}] Erreur critique {current_model}: {e}")
+                logger.error(
+                    f"[{operation}] Erreur critique {current_model}: {e}"
+                )
                 raise e
 
     return None
@@ -367,6 +500,9 @@ def safe_mistral_call(model, messages, operation="API call"):
 
 def analyze_emotions(text):
     """Renvoie le score des émotions + l'émotion dominante avec fallback"""
+    if not text:  # rajouter une vérification pour éviter les type None errors
+        logger.warning("Texte vide reçu pour analyse émotionnelle")
+        return None, None
     logger.info(f"Analyse émotionnelle démarrée - {len(text)} caractères")
 
     system_prompt = read_file("context_emotion.txt")
@@ -424,7 +560,7 @@ def analyze_emotions(text):
 
         logger.info(f"Émotion dominante: {dominant[0]} ({dominant[1]:.2f})")
         logger.debug(f"Scores détaillés: {json.dumps(scores, indent=2)}")
-        
+
         return scores, dominant
 
     except (json.JSONDecodeError, KeyError) as e:
@@ -581,6 +717,504 @@ def generate_image_from_text(user, prompt_text, dream_instance):
         metric_fail("mistral", "image", int(duration * 1000), reason="exception")
         return False
 
+
+# ---------- THEMATIQUE ----------
+
+
+# Configuration BERTopic avec paramètres ajustés pour petits datasets
+try:
+    if 'test' in sys.argv or getattr(settings, 'TESTING', False):
+        BERTOPIC_AVAILABLE = False
+        logger.info("BERTopic désactivé en mode test")
+    else:
+        # Modèle d'embeddings optimisé pour le français
+        embedding_model = SentenceTransformer(
+            'paraphrase-multilingual-MiniLM-L12-v2'
+        )
+
+        # UMAP avec paramètres pour petits datasets
+        umap_model = UMAP(
+            n_neighbors=2,  # Très petit pour gérer peu de documents
+            n_components=2,  # Réduction à 2D
+            min_dist=0.0,
+            metric='cosine',
+            random_state=42,
+        )
+
+        # HDBSCAN avec paramètres très permissifs
+        hdbscan_model = HDBSCAN(
+            min_cluster_size=2,  # Minimum 2 rêves par cluster
+            min_samples=1,  # Très permissif
+            metric='euclidean',
+            cluster_selection_method='eom',
+        )
+
+        BERTOPIC_AVAILABLE = True
+        logger.info("BERTopic configuré pour petits datasets")
+
+except ImportError:
+    logger.warning("BERTopic non disponible")
+    BERTOPIC_AVAILABLE = False
+
+
+def _preprocess_for_analysis(text: str) -> str:
+    """Préprocesse le texte avec spaCy pour analyse thématique - version améliorée"""
+    if not nlp or not text:
+        return _basic_preprocess(text)
+
+    text = text.lower()
+    # ✅ AMÉLIORATION : Préserver plus de ponctuation contextuelle
+    text = re.sub(r'[^\w\s\'-]', ' ', text)  # Garder apostrophes et tirets
+
+    doc = nlp(text)
+    significant_tokens = []
+
+    for token in doc:
+        lemma = token.lemma_.lower()
+        original = token.text.lower()
+
+        # ✅ AMÉLIORATION : Critères de sélection plus inclusifs
+        keep_token = False
+        
+        # Noms et noms propres (priorité)
+        if token.pos_ in ['NOUN', 'PROPN']:
+            keep_token = True
+            
+        # Verbes d'action significatifs (liste étendue)
+        elif token.pos_ == 'VERB' and lemma in [
+            'aller', 'venir', 'partir', 'arriver', 'entrer', 'sortir', 'monter', 'descendre',
+            'voler', 'tomber', 'courir', 'fuir', 'nager', 'marcher', 'conduire', 'voyager',
+            'manger', 'boire', 'dormir', 'rêver', 'jouer', 'travailler', 'étudier', 'apprendre',
+            'rencontrer', 'voir', 'regarder', 'écouter', 'parler', 'dire', 'crier', 'pleurer',
+            'rire', 'aimer', 'détester', 'avoir', 'être', 'faire', 'pouvoir', 'vouloir'
+        ]:
+            keep_token = True
+            
+        # Adjectifs descriptifs importants
+        elif token.pos_ == 'ADJ' and len(lemma) >= 4:
+            keep_token = True
+            
+        # Prépositions et adverbes de lieu/temps utiles
+        elif token.pos_ in ['ADP', 'ADV'] and original in [
+            'chez', 'dans', 'sur', 'sous', 'avec', 'sans', 'pour', 'par', 'vers', 'depuis',
+            'hier', 'aujourd', 'demain', 'maintenant', 'toujours', 'jamais', 'souvent', 'parfois',
+            'ici', 'là', 'partout', 'nulle', 'dehors', 'dedans', 'devant', 'derrière'
+        ]:
+            keep_token = True
+
+        # ✅ FILTRAGE : Conserver seulement les tokens pertinents
+        if keep_token and len(lemma) >= 2:
+            # Utiliser lemma pour la cohérence, mais garder original si plus informatif
+            final_token = lemma
+            
+            # ✅ AMÉLIORATION : Préférer forme originale pour certains cas
+            if (
+                original not in FRENCH_STOPWORDS 
+                and original not in DREAM_SPECIFIC_STOPWORDS
+                and not original.isdigit()
+                and token.is_alpha
+                and len(original) >= 3
+            ):
+                # Garder original si différent du lemma et plus expressif
+                if original != lemma and len(original) >= len(lemma):
+                    final_token = original
+                    
+                # Exceptions pour les mots très courts mais importants
+                if len(final_token) >= 2 or final_token in ['je', 'tu', 'il', 'on', 'me', 'te', 'se']:
+                    # Dernière vérification d'exclusion
+                    exclude_patterns = ['fair', 'avoir', 'êtr', 'etr', 'all', 'ven']
+                    if not any(pattern in final_token for pattern in exclude_patterns):
+                        significant_tokens.append(final_token)
+
+    # ✅ AMÉLIORATION : Déduplication intelligente en gardant la forme la plus informative
+    unique_tokens = []
+    seen_roots = set()
+    
+    for token in significant_tokens:
+        # Créer une forme "racine" pour éviter les doublons proches
+        root = token[:4] if len(token) > 4 else token
+        
+        if root not in seen_roots or len(token) > 4:  # Préférer formes longues
+            unique_tokens.append(token)
+            seen_roots.add(root)
+
+    return ' '.join(unique_tokens)
+
+
+def _basic_preprocess(text: str) -> str:
+    """Préprocessing basique sans spaCy - version améliorée"""
+    if not text:
+        return ""
+
+    text = text.lower()
+    text = re.sub(r'[^\w\s\'-]', ' ', text)  # Garder apostrophes et tirets
+    tokens = text.split()
+
+    filtered = []
+    for token in tokens:
+        # ✅ AMÉLIORATION : Critères plus permissifs pour conserver plus de contexte
+        if (
+            len(token) >= 3  # Réduire le minimum de 4 à 3 caractères
+            and token not in FRENCH_STOPWORDS
+            and token not in DREAM_SPECIFIC_STOPWORDS
+            and not token.isdigit()
+            and token.isalpha()
+            # Exclusions spécifiques pour éviter les mots parasites
+            and token not in ['avoir', 'être', 'etre', 'faire', 'aller', 'venir', 'dire', 'voir']
+        ):
+            filtered.append(token)
+
+    return ' '.join(filtered)
+
+
+def _bertopic_analysis(dream_texts: List[str], total_dreams: int):
+    """Analyse BERTopic pour datasets moyens/grands (8+ rêves)"""
+    if not BERTOPIC_AVAILABLE or total_dreams < 8:
+        return None
+
+    # Préprocesser les textes
+    preprocessed_texts = []
+    for text in dream_texts:
+        cleaned = _preprocess_for_analysis(text)
+        if len(cleaned.strip()) > 10:
+            preprocessed_texts.append(cleaned)
+
+    if len(preprocessed_texts) < 5:
+        logger.info("Pas assez de textes valides pour BERTopic, fallback")
+        return None
+
+    try:
+        # Vectorizer adapté
+        vectorizer = CountVectorizer(
+            ngram_range=(1, 2),
+            stop_words=list(FRENCH_STOPWORDS) if FRENCH_STOPWORDS else None,
+            min_df=1,  # Plus permissif
+            max_df=0.9,
+            max_features=50,  # Limiter pour petits datasets
+        )
+
+        # BERTopic avec paramètres adaptés
+        topic_model = BERTopic(
+            embedding_model=embedding_model,
+            umap_model=umap_model,
+            hdbscan_model=hdbscan_model,
+            vectorizer_model=vectorizer,
+            min_topic_size=2,
+            nr_topics='auto',
+            verbose=False,
+        )
+
+        topics, probabilities = topic_model.fit_transform(preprocessed_texts)
+
+        # Analyser les résultats
+        topic_info = topic_model.get_topic_info()
+        valid_topics = topic_info[topic_info.Topic != -1]
+
+        if len(valid_topics) == 0:
+            return None
+
+        # Extraire les thèmes
+        theme_results = []
+        topic_counts = Counter(topics)
+
+        for topic_id, count in topic_counts.items():
+            if topic_id != -1 and count >= 2:
+                topic_words = topic_model.get_topic(topic_id)
+                if topic_words:
+                    # Prendre les 2-3 mots les plus représentatifs
+                    top_words = [
+                        word for word, score in topic_words[:3] if score > 0.1
+                    ]
+                    if top_words:
+                        theme_name = ' & '.join(
+                            top_words[:2]
+                        )  # Maximum 2 mots
+                        theme_results.append((theme_name, count))
+
+        return sorted(theme_results, key=lambda x: x[1], reverse=True)
+
+    except Exception as e:
+        logger.error(f"Erreur BERTopic: {e}")
+        return None
+
+
+def _category_analysis(dream_texts: List[str], total_dreams: int):
+    """Analyse par catégories prédéfinies pour petits datasets - version améliorée"""
+    theme_document_freq = Counter()
+    theme_word_freq = Counter()  # Pour compter la fréquence totale des mots
+
+    for dream_text in dream_texts:
+        words = _preprocess_for_analysis(dream_text).split()
+
+        # Détecter les catégories présentes dans ce rêve
+        detected_categories = set()
+        category_word_count = defaultdict(int)
+
+        for category, keywords in THEME_CATEGORIES.items():
+            for word in words:
+                for keyword in keywords:
+                    match_found = False
+                    
+                    # Différents niveaux de matching
+                    if word == keyword:
+                        match_found = True
+                    elif len(word) >= 4 and len(keyword) >= 4:
+                        # Matching partiel pour mots longs
+                        if keyword in word or word in keyword:
+                            match_found = True
+                        # Stemming si disponible
+                        elif stemmer and stemmer.stem(word) == stemmer.stem(keyword):
+                            match_found = True
+                    
+                    if match_found:
+                        detected_categories.add(category)
+                        category_word_count[category] += 1
+                        theme_word_freq[category] += 1
+                        break
+
+        # Compter chaque catégorie une fois par rêve (pour document frequency)
+        for category in detected_categories:
+            theme_document_freq[category] += 1
+
+    # AMÉLIORATION : Stratégie adaptative selon le volume de données
+    if total_dreams <= 3:
+        # Pour très peu de rêves, utiliser la fréquence des mots
+        recurring_themes = [
+            (theme, freq)
+            for theme, freq in theme_word_freq.items()
+            if freq >= 1  # Au moins 1 occurrence
+        ]
+        logger.debug(f"Petit dataset ({total_dreams} rêves): utilisation fréquence mots")
+    elif total_dreams <= 6:
+        # Dataset moyen : mix entre document frequency et word frequency
+        recurring_themes = []
+        for theme in set(list(theme_document_freq.keys()) + list(theme_word_freq.keys())):
+            doc_freq = theme_document_freq.get(theme, 0)
+            word_freq = theme_word_freq.get(theme, 0)
+            
+            # Score hybride : privilégier document frequency mais accepter word frequency élevée
+            if doc_freq >= 2:
+                score = doc_freq
+            elif word_freq >= 2:
+                score = 1  # Score minimal mais valide
+            else:
+                continue
+                
+            recurring_themes.append((theme, score))
+        logger.debug(f"Dataset moyen ({total_dreams} rêves): utilisation score hybride")
+    else:
+        # Dataset plus grand : utiliser document frequency classique
+        recurring_themes = [
+            (theme, count)
+            for theme, count in theme_document_freq.items()
+            if count >= 2
+        ]
+        logger.debug(f"Grand dataset ({total_dreams} rêves): utilisation document frequency")
+
+    # FALLBACK : Si aucun thème trouvé, analyse plus basique
+    if not recurring_themes and dream_texts:
+        logger.debug("Aucun thème catégorisé trouvé, analyse basique des mots fréquents")
+        
+        # Analyser les mots les plus fréquents de tous les rêves
+        all_text = " ".join(dream_texts).lower()
+        words = _preprocess_for_analysis(all_text).split()
+        
+        if words:
+            word_counts = Counter(words)
+            # Prendre les mots qui apparaissent au moins dans un rêve
+            min_freq = max(1, total_dreams // 3) if total_dreams > 3 else 1
+            
+            basic_themes = [
+                (word, count)
+                for word, count in word_counts.most_common(10)
+                if count >= min_freq and len(word) >= 4 and word not in ['reve', 'rever', 'fait', 'suis', 'dans', 'avec', 'tout', 'tres', 'bien', 'comme', 'puis', 'alors']
+            ]
+            
+            if basic_themes:
+                recurring_themes = basic_themes[:5]  # Max 5 thèmes basiques
+                logger.debug(f"Thèmes basiques trouvés: {[t[0] for t in recurring_themes]}")
+
+    result = sorted(recurring_themes, key=lambda x: x[1], reverse=True)
+    logger.debug(f"Analyse catégorique: {len(result)} thèmes pour {total_dreams} rêves")
+    
+    return result
+
+
+def get_themes_stats_filtered(user, period=None, start_date=None, end_date=None):
+    """
+    Analyse les thématiques récurrentes pour une période donnée
+    Utilise la même logique qu'analyze_recurring_themes pour la cohérence
+    """
+    logger.info(f"Analyse thématiques filtrées user {user.id} - period: {period}")
+
+    dreams_queryset = get_date_filter_queryset(user, period, start_date, end_date)
+    dreams = dreams_queryset.filter(transcription__isnull=False).exclude(transcription="")
+
+    dream_texts = list(dreams.values_list('transcription', flat=True))
+    total_dreams = len(dream_texts)
+
+    if total_dreams < 2:
+        return {
+            'themes': {},
+            'total_dreams': total_dreams,
+            'top_theme': None,
+            'has_data': False,
+            'message': f'Au moins 2 rêves nécessaires pour détecter des thématiques',
+        }
+
+    # ✅ UTILISER LA MÊME LOGIQUE qu'analyze_recurring_themes
+    if total_dreams >= 8 and BERTOPIC_AVAILABLE:
+        themes_results = _bertopic_analysis(dream_texts, total_dreams)
+        method = "BERTopic"
+    else:
+        themes_results = _category_analysis(dream_texts, total_dreams)
+        method = "Catégories"
+
+    if not themes_results:
+        return {
+            'themes': {},
+            'total_dreams': total_dreams,
+            'top_theme': None,
+            'has_data': False,
+            'message': 'Aucune thématique récurrente détectée',
+        }
+
+    # Formatage pour le frontend
+    themes_dict = {}
+    for theme_name, count in themes_results:
+        percentage = round((count / total_dreams) * 100, 1)
+        themes_dict[theme_name.capitalize()] = {
+            'count': count,
+            'percentage': percentage,
+        }
+
+    top_theme = {
+        'name': themes_results[0][0].capitalize(),
+        'count': themes_results[0][1],
+        'percentage': round((themes_results[0][1] / total_dreams) * 100, 1),
+    }
+
+    logger.info(f"Thématiques analysées ({method}): {len(themes_results)} trouvées")
+
+    return {
+        'themes': themes_dict,
+        'total_dreams': total_dreams,
+        'top_theme': top_theme,
+        'has_data': True,
+        'method': method,
+        # ✅ NOUVEAU : Retourner les thèmes bruts pour réutilisation
+        'themes_list': [theme_name.capitalize() for theme_name, _ in themes_results],
+        'raw_themes_results': themes_results,
+    }
+
+
+def get_themes_timeline_filtered(user, period=None, start_date=None, end_date=None):
+    """
+    Analyse l'évolution des thématiques dans le temps
+    NOUVELLE VERSION : Utilise les mêmes thèmes que get_themes_stats_filtered
+    """
+    logger.info(f"Timeline thématiques user {user.id}")
+
+    dreams_queryset = get_date_filter_queryset(user, period, start_date, end_date)
+    dreams = (
+        dreams_queryset.filter(transcription__isnull=False)
+        .exclude(transcription="")
+        .order_by('created_at')
+    )
+
+    if dreams.count() < 2:
+        return [], []
+
+    # ✅ ÉTAPE 1 : Obtenir les thèmes globaux de la période (cohérence garantie)
+    global_themes_analysis = get_themes_stats_filtered(user, period, start_date, end_date)
+    
+    if not global_themes_analysis['has_data']:
+        return [], []
+    
+    # Récupérer la liste des thèmes à suivre dans la timeline
+    themes_to_track = global_themes_analysis['themes_list'][:10]  # Max 10 thèmes pour lisibilité
+    
+    logger.info(f"Thèmes à suivre dans timeline: {themes_to_track}")
+
+    # ✅ ÉTAPE 2 : Grouper les rêves par période temporelle
+    if period in ['month', '3months']:
+        # Groupement par semaine pour périodes courtes
+        date_format = '%Y-W%U'
+        display_format = lambda d: f"Sem {d.strftime('%U')}"
+    else:
+        # Groupement par mois pour périodes longues
+        date_format = '%Y-%m'
+        display_format = lambda d: d.strftime('%m/%Y')
+
+    dreams_by_period = defaultdict(list)
+    for dream in dreams:
+        period_key = dream.created_at.strftime(date_format)
+        dreams_by_period[period_key].append(dream.transcription)
+
+    # ✅ ÉTAPE 3 : Pour chaque période, compter SEULEMENT les thèmes prédéfinis
+    timeline_data = []
+
+    for period_key in sorted(dreams_by_period.keys()):
+        texts = dreams_by_period[period_key]
+        period_data = {
+            'period': period_key, 
+            'total_dreams': len(texts)
+        }
+        
+        # Initialiser tous les thèmes à 0
+        for theme in themes_to_track:
+            period_data[theme] = 0
+
+        # ✅ COMPTER SEULEMENT les thèmes qui correspondent à notre liste globale
+        if len(texts) >= 1:
+            # Utiliser la même méthode d'analyse que pour les stats globales
+            if len(texts) >= 8 and BERTOPIC_AVAILABLE:
+                period_themes = _bertopic_analysis(texts, len(texts))
+            else:
+                period_themes = _category_analysis(texts, len(texts))
+
+            # Mapper les résultats aux thèmes globaux
+            if period_themes:
+                for theme_name, count in period_themes:
+                    theme_clean = theme_name.capitalize()
+                    if theme_clean in themes_to_track:
+                        period_data[theme_clean] = count
+                        logger.debug(f"Période {period_key}: {theme_clean} = {count}")
+
+        timeline_data.append(period_data)
+
+    logger.info(f"Timeline thématiques: {len(timeline_data)} périodes pour {len(themes_to_track)} thèmes")
+    
+    return timeline_data, themes_to_track
+
+
+def analyze_recurring_themes(user, min_dreams=2, min_occurrence=2):
+    """
+    MISE À JOUR : Utilise maintenant get_themes_stats_filtered pour éviter la duplication
+    """
+    logger.info(f"Analyse thématiques récurrentes user {user.id}")
+    
+    # Utiliser la fonction harmonisée qui contient déjà toute la logique
+    result = get_themes_stats_filtered(user, period='all')
+    
+    if not result['has_data']:
+        return {
+            'top_theme': 'Pas encore de données',
+            'percentage': 0,
+            'total_dreams': result['total_dreams'],
+            'message': result['message'],
+        }
+    
+    # Reformater pour correspondre à l'ancien format de retour
+    top_theme_info = result['top_theme']
+    
+    return {
+        'top_theme': top_theme_info['name'],
+        'percentage': top_theme_info['percentage'],
+        'total_dreams': result['total_dreams'],
+        'all_themes': [(name, data['count']) for name, data in result['themes'].items()],
+        'message': f"{len(result['themes'])} thématiques trouvées ({result['method']})",
+    }
 # ---------- PROFIL ONYRIQUE ----------
 
 def get_profil_onirique_stats(user):
@@ -598,6 +1232,8 @@ def get_profil_onirique_stats(user):
             "label_reveuse": "rêves enregistrés",
             "emotion_dominante": "émotion endormie",
             "emotion_dominante_percentage": 0,
+            "thematique_recurrente": "Pas encore de données",
+            "thematique_percentage": 0,
         }
 
     # Statut rêve vs cauchemar
@@ -620,10 +1256,15 @@ def get_profil_onirique_stats(user):
     if emotion_counts:
         emotion_dominante, count = emotion_counts.most_common(1)[0]
         emotion_percentage = round((count / total) * 100)
-        logger.info(f"Profil calculé: {statut_reveuse} ({pourcentage}%), émotion: {emotion_dominante}")
+        logger.info(
+            f"Profil calculé: {statut_reveuse} ({pourcentage}%), émotion: {emotion_dominante}"
+        )
     else:
         emotion_dominante = "émotion endormie"
         emotion_percentage = 0
+
+    # Analyse thématique
+    theme_analysis = analyze_recurring_themes(user)
 
     return {
         "statut_reveuse": statut_reveuse,
@@ -631,6 +1272,8 @@ def get_profil_onirique_stats(user):
         "label_reveuse": label,
         "emotion_dominante": emotion_dominante,
         "emotion_dominante_percentage": emotion_percentage,
+        "thematique_recurrente": theme_analysis['top_theme'],
+        "thematique_percentage": theme_analysis['percentage'],
     }
 
 # ---------- DASHBOARD PERSONNEL ----------
@@ -803,7 +1446,9 @@ def get_emotions_timeline_filtered(
 
     return timeline_list, list(all_emotions)
 
+
 # ---------- NORMALISATION DES LABELS ----------
+
 
 def _strip_accents(s: str) -> str:
     """

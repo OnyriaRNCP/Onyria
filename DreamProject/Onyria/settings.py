@@ -94,6 +94,9 @@ AI_CONFIG = {
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 
+# Variable pour détecter le mode test
+TESTING = 'test' in sys.argv
+
 # Définition des applications
 INSTALLED_APPS = [
     "whitenoise.runserver_nostatic",
