@@ -19,6 +19,7 @@ from collections import Counter
 from django.utils import timezone
 import time
 from datetime import timedelta
+import os
 
 from ..models import Dream
 from ..utils import (
@@ -34,6 +35,8 @@ from ..utils import (
 )
 
 User = get_user_model()
+
+TEST_USER_PASSWORD = os.environ.get('TEST_PASSWORD', 'django_test_secure_2024')
 
 logger = logging.getLogger(__name__)
 
@@ -236,7 +239,7 @@ class ClassificationFunctionsTest(TestCase):
         self.user = User.objects.create_user(
             email='test_classification@example.com',
             username='test_classification',
-            password='testpass123',
+            password=TEST_USER_PASSWORD,
         )
 
     def test_classify_dream_function_positive(self):
@@ -383,7 +386,7 @@ class StatisticsAndProfilingTest(TestCase):
         self.user = User.objects.create_user(
             email='test_stats@example.com',
             username='test_stats',
-            password='testpass123',
+            password=TEST_USER_PASSWORD,
         )
 
     def test_get_profil_onirique_stats_no_dreams(self):
@@ -807,7 +810,7 @@ class DashboardFunctionsTest(TestCase):
         self.user = User.objects.create_user(
             email='dashboard@example.com',
             username='dashboard_user',
-            password='testpass123',
+            password=TEST_USER_PASSWORD,
         )
         self.dreams_data = self._create_test_dreams()
 
@@ -1146,7 +1149,7 @@ class DashboardFunctionsTest(TestCase):
         empty_user = User.objects.create_user(
             email='empty@example.com',
             username='empty_user',
-            password='testpass123',
+            password=TEST_USER_PASSWORD,
         )
 
         # Stats de types

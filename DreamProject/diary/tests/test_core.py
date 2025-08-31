@@ -16,11 +16,14 @@ from django.contrib.auth import get_user_model
 from unittest.mock import patch, MagicMock
 import json
 import tempfile
+import os
 
 from ..models import Dream
 from ..utils import softmax, get_profil_onirique_stats
 
 User = get_user_model()
+
+TEST_USER_PASSWORD = os.environ.get('TEST_PASSWORD', 'django_test_secure_2024')
 
 
 # === Utilitaire local pour lire les événements SSE ===
@@ -55,7 +58,7 @@ class CoreModelTest(TestCase):
         self.user = User.objects.create_user(
             email='core@example.com',
             username='coreuser',
-            password='testpass123'
+            password=TEST_USER_PASSWORD
         )
 
     def test_dream_creation_basic(self):
@@ -210,7 +213,7 @@ class CoreUtilsTest(TestCase):
         self.user = User.objects.create_user(
             email='core_utils@example.com',
             username='coreutils',
-            password='testpass123'
+            password=TEST_USER_PASSWORD
         )
 
 
@@ -226,7 +229,7 @@ class CoreViewsTest(TestCase):
         self.user = User.objects.create_user(
             email='core_views@example.com',
             username='coreviewsuser',
-            password='testpass123'
+            password=TEST_USER_PASSWORD
         )
         self.client = Client()
 
@@ -236,7 +239,7 @@ class CoreViewsTest(TestCase):
         
         Si ce test échoue, l'utilisateur ne peut pas accéder à l'app.
         """
-        self.client.login(email='core_views@example.com', password='testpass123')
+        self.client.login(email='core_views@example.com', password=TEST_USER_PASSWORD)
         
         response = self.client.get(reverse('dream_diary'))
         
@@ -249,7 +252,7 @@ class CoreViewsTest(TestCase):
         
         C'est la fonctionnalité principale de l'app.
         """
-        self.client.login(email='core_views@example.com', password='testpass123')
+        self.client.login(email='core_views@example.com', password=TEST_USER_PASSWORD)
         
         response = self.client.get(reverse('dream_recorder'))
         
@@ -278,7 +281,7 @@ class CoreViewsTest(TestCase):
         user2 = User.objects.create_user(
             email='user2@example.com',
             username='user2',
-            password='testpass123'
+            password=TEST_USER_PASSWORD
         )
         
         # Créer des rêves pour chaque utilisateur
@@ -286,7 +289,7 @@ class CoreViewsTest(TestCase):
         Dream.objects.create(user=user2, transcription="Rêve user 2")
         
         # Connexion user 1
-        self.client.login(email='core_views@example.com', password='testpass123')
+        self.client.login(email='core_views@example.com', password=TEST_USER_PASSWORD)
         response = self.client.get(reverse('dream_diary'))
         
         dreams = response.context['dreams']
@@ -306,7 +309,7 @@ class CoreWorkflowTest(TestCase):
         self.user = User.objects.create_user(
             email='core_workflow@example.com',
             username='coreworkflow',
-            password='testpass123'
+            password=TEST_USER_PASSWORD
         )
         self.client = Client()
 
@@ -336,7 +339,7 @@ class CoreWorkflowTest(TestCase):
         mock_generate.return_value = True
         
         # Connexion et test
-        self.client.login(email='core_workflow@example.com', password='testpass123')
+        self.client.login(email='core_workflow@example.com', password=TEST_USER_PASSWORD)
         
         with tempfile.NamedTemporaryFile(suffix='.wav') as audio_file:
             audio_file.write(b'fake_audio_data')
@@ -390,7 +393,7 @@ class CoreWorkflowTest(TestCase):
         L'application doit gérer gracieusement les erreurs d'IA.
         """
         with patch('diary.views.transcribe_audio', return_value=None):
-            self.client.login(email='core_workflow@example.com', password='testpass123')
+            self.client.login(email='core_workflow@example.com', password=TEST_USER_PASSWORD)
             
             with tempfile.NamedTemporaryFile(suffix='.wav') as audio_file:
                 audio_file.write(b'fake_audio_data')
@@ -424,7 +427,7 @@ class CoreErrorHandlingTest(TestCase):
         self.user = User.objects.create_user(
             email='core_errors@example.com',
             username='coreerrors',
-            password='testpass123'
+            password=TEST_USER_PASSWORD
         )
 
     def test_invalid_json_handling(self):
@@ -578,11 +581,11 @@ class CoreSanityTest(TestCase):
         user = User.objects.create_user(
             email='sanity@example.com',
             username='sanityuser',
-            password='testpass123'
+            password=TEST_USER_PASSWORD
         )
         
         self.assertEqual(user.email, 'sanity@example.com')
-        self.assertTrue(user.check_password('testpass123'))
+        self.assertTrue(user.check_password(TEST_USER_PASSWORD))
 
 
 """
