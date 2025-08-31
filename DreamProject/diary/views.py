@@ -23,7 +23,7 @@ from .utils import (
     format_dream_type_label,
     transcribe_audio,
 )
-from .constants import EMOTION_LABELS, DREAM_TYPE_LABELS, DREAM_ERROR_MESSAGE
+from .constants import EMOTION_LABELS, DREAM_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
 
@@ -121,9 +121,6 @@ def dream_recorder_view(request):
 def analyse_from_voice(request):
     """Version SSE (Server-Sent Events) de analyse_from_voice pour affichage progressif des éléments"""
 
-    def analyse_from_voice(request):
-    """Version SSE (Server-Sent Events) de analyse_from_voice pour affichage progressif des éléments"""
-    
     def event_stream():
         start_time = time.time()
         dream = None  # suivi du rêve provisoire pour pouvoir le supprimer en cas d'échec critique
@@ -135,7 +132,9 @@ def analyse_from_voice(request):
 
             audio_file = request.FILES['audio']
             audio_data = audio_file.read()
-            logger.info(f"Analyse SSE user {request.user.id} démarrée - {len(audio_data)} bytes")
+            logger.info(
+                f"Analyse SSE user {request.user.id} démarrée - {len(audio_data)} bytes"
+            )
 
             # Transcription
             transcription = transcribe_audio(audio_data)
@@ -154,7 +153,11 @@ def analyse_from_voice(request):
             dream_type = classify_dream(emotions)
 
             # format "clé brute" (ex: 'joie', 'rêve') -> labels FR
-            raw_dominant_key = dominant_emotion[0] if isinstance(dominant_emotion, (list, tuple)) else dominant_emotion
+            raw_dominant_key = (
+                dominant_emotion[0]
+                if isinstance(dominant_emotion, (list, tuple))
+                else dominant_emotion
+            )
             formatted_dominant_emotion = format_emotion_label(raw_dominant_key)
             formatted_dream_type = format_dream_type_label(dream_type)
 
@@ -174,14 +177,18 @@ def analyse_from_voice(request):
             logger.debug(f"Rêve {dream.id} créé")
 
             # Image
-            image_success = generate_image_from_text(request.user, transcription, dream)
+            image_success = generate_image_from_text(
+                request.user, transcription, dream
+            )
             if image_success:
                 dream.refresh_from_db()
                 if dream.image_url:
                     logger.info(f"Image envoyée via SSE pour rêve {dream.id}")
                     yield f"data: {json.dumps({'step': 'image', 'data': {'image_path': dream.image_url}})}\n\n"
                 else:
-                    logger.warning(f"Image générée mais URL manquante pour rêve {dream.id}")
+                    logger.warning(
+                        f"Image générée mais URL manquante pour rêve {dream.id}"
+                    )
                     yield f"data: {json.dumps({'step': 'image', 'data': {'image_path': None}})}\n\n"
             else:
                 logger.warning(f"Échec génération image pour rêve {dream.id}")
@@ -208,16 +215,27 @@ def analyse_from_voice(request):
             yield f"data: {json.dumps({'step': 'interpretation', 'data': {'interpretation': interpretation}})}\n\n"
 
             total_duration = time.time() - start_time
-            if total_duration > settings.AI_CONFIG['SSE_SLOW_WARNING_THRESHOLD']:
-                logger.warning(f"Analyse SSE lente: {total_duration:.2f}s pour user {request.user.id}")
-            
-            logger.info(f"Analyse SSE user {request.user.id} réussie - Type: {dream_type}, Émotion: {raw_dominant_key} en {total_duration:.2f}s")
+            if (
+                total_duration
+                > settings.AI_CONFIG['SSE_SLOW_WARNING_THRESHOLD']
+            ):
+                logger.warning(
+                    f"Analyse SSE lente: {total_duration:.2f}s pour user {request.user.id}"
+                )
+
+            logger.info(
+                f"Analyse SSE user {request.user.id} réussie - Type: {dream_type}, Émotion: {raw_dominant_key} en {total_duration:.2f}s"
+            )
             # Succès explicite pour les tests (image peut échouer sans bloquer)
             yield f"data: {json.dumps({'step': 'complete', 'success': True})}\n\n"
 
         except Exception as e:
-            duration = time.time() - start_time if 'start_time' in locals() else 0
-            logger.error(f"Erreur analyse SSE user {request.user.id} après {duration:.2f}s: {e}")
+            duration = (
+                time.time() - start_time if 'start_time' in locals() else 0
+            )
+            logger.error(
+                f"Erreur analyse SSE user {request.user.id} après {duration:.2f}s: {e}"
+            )
             # Sécurité : si un rêve provisoire existe, le supprimer pour ne rien laisser en cas d'échec global
             try:
                 if 'dream' in locals() and dream is not None:
@@ -226,7 +244,9 @@ def analyse_from_voice(request):
                 pass
             yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
 
-    response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
+    response = StreamingHttpResponse(
+        event_stream(), content_type='text/event-stream'
+    )
     response['Cache-Control'] = 'no-cache'
     return response
 
