@@ -25,6 +25,8 @@ load_dotenv(ROOT_DIR / ".env")
 # Contexte tests/CI (GitHub Actions, etc.)
 IS_CI_OR_TEST = ("test" in sys.argv) or os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true"
 
+if IS_CI_OR_TEST: os.environ["APP_ENV"] = "test"
+
 # Configuration sécurisée - SECRET_KEY obligatoire (fallback uniquement en CI)
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
