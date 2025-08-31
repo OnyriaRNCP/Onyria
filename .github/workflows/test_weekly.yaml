@@ -63,36 +63,6 @@ jobs:
             sleep 2
           done
       
-      - name: Run Integration tests
-        working-directory: DreamProject
-        run: |
-          echo "Tests d'intégration complets..."
-          python manage.py test diary.tests.test_integration --verbosity=2 --keepdb
-      
-      - name: Run Models tests (Postgres)
-        working-directory: DreamProject
-        run: |
-          echo "Tests des modèles sous PostgreSQL..."
-          python manage.py test diary.tests.test_models --verbosity=2 --keepdb
-      
-      - name: Run Utils tests
-        working-directory: DreamProject
-        run: |
-          echo "Tests des utilitaires..."
-          python manage.py test diary.tests.test_utils --verbosity=2 --keepdb
-      
-      - name: Run Views tests
-        working-directory: DreamProject
-        run: |
-          echo "Tests des vues Django..."
-          python manage.py test diary.tests.test_views --verbosity=2 --keepdb
-      
-      - name: Run Complete AI tests
-        working-directory: DreamProject
-        run: |
-          echo "Tests IA complets..."
-          python manage.py test diary.tests.test_ai_functions --verbosity=2 --keepdb
-      
       - name: Security Audit - Bandit
         continue-on-error: true
         run: |
@@ -107,114 +77,12 @@ jobs:
           safety check --json --output safety-report.json || true
           safety check
       
-      - name: Run Security tests
+      - name: Run All Tests with Coverage
         working-directory: DreamProject
         run: |
-          echo "Tests de sécurité..."
-          python manage.py test diary.tests.test_security --verbosity=2 --keepdb
-
-      - name: Clean test environment
-        working-directory: DreamProject
-        run: |
-          echo "Nettoyage de l'environnement de test..."
-          # S'assurer que la base est propre
-          python manage.py flush --noinput || true
-          # Créer les tables si nécessaire
-          python manage.py migrate --noinput || true
-      
-      - name: Coverage Analysis (if requested)
-        if: github.event.inputs.full_coverage == 'true' || github.event.inputs.full_coverage == ''
-        working-directory: DreamProject
-        run: |
-          echo "Analyse de couverture complète..."
-          # Utiliser --keepdb pour éviter la recréation de la base
-          coverage run --source='diary' --omit='*/migrations/*,*/tests/*' manage.py test diary.tests --verbosity=1 --keepdb
+          echo "Tests complets avec analyse de couverture..."
+          coverage run --source='diary' --omit='*/migrations/*,*/tests/*' manage.py test diary.tests --verbosity=2
           coverage report --show-missing
           coverage html
           coverage xml
           coverage-badge -f -o coverage.svg
-      
-      - name: Upload all artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: weekly-test-reports
-          path: |
-            DreamProject/htmlcov/
-            DreamProject/coverage.xml
-            DreamProject/coverage.svg
-            bandit-report.json
-            safety-report.json
-      
-      - name: Generate Weekly Report
-        if: always()
-        run: |
-          echo "=== RAPPORT HEBDOMADAIRE COMPLET ==="
-          echo "Date: $(date)"
-          echo "Semaine: $(date +%Y-W%U)"
-          echo "Branche: ${{ github.ref_name }}"
-          echo "Commit: ${{ github.sha }}"
-          echo ""
-          
-          # Variables pour compter les résultats
-          TESTS_TOTAL=6  # Integration, Models, Utils, Views, AI, Security
-          TESTS_SUCCESS=0
-          
-          echo "📋 RÉSULTATS DES TESTS:"
-          
-          # Vérification basée sur le statut du job (approximation)
-          if [ "${{ job.status }}" = "success" ]; then
-            echo "Tests d'intégration: SUCCÈS"
-            echo " Tests modèles (PostgreSQL): SUCCÈS"
-            echo " Tests utilitaires: SUCCÈS" 
-            echo " Tests vues: SUCCÈS"
-            echo " Tests IA complets: SUCCÈS"
-            echo " Tests sécurité: SUCCÈS"
-            TESTS_SUCCESS=6
-          else
-            echo "Certains tests ont échoué - voir les logs ci-dessus"
-            TESTS_SUCCESS=3  # Estimation conservatrice
-          fi
-          
-          # Calcul du score de santé
-          HEALTH_SCORE=$((TESTS_SUCCESS * 100 / TESTS_TOTAL))
-          echo ""
-          echo " SCORE DE SANTÉ: ${HEALTH_SCORE}%"
-          
-          if [[ $HEALTH_SCORE -ge 90 ]]; then
-            echo " EXCELLENT - Système en parfaite santé"
-            echo "Toutes les suites de tests passent avec succès"
-          elif [[ $HEALTH_SCORE -ge 75 ]]; then
-            echo " BON - Quelques améliorations possibles"
-            echo "La plupart des tests passent, optimisations mineures recommandées"
-          elif [[ $HEALTH_SCORE -ge 50 ]]; then
-            echo " MOYEN - Attention requise"
-            echo "Plusieurs tests échouent, révision nécessaire"
-          else
-            echo " CRITIQUE - Action immédiate requise"
-            echo "Nombreux échecs détectés, intervention urgente"
-          fi
-          
-          echo ""
-          echo " MÉTRIQUES TECHNIQUES:"
-          echo "- Base de données: PostgreSQL (tests concurrence)"
-          echo "- Couverture: ${{ github.event.inputs.full_coverage == 'true' && 'Complète' || 'Standard' }}"
-          echo "- Audit sécurité: Bandit + Safety"
-          echo "- Tests parallèles: Activés"
-          
-          echo ""
-          echo " PROCHAINES ACTIONS:"
-          if [[ $HEALTH_SCORE -lt 90 ]]; then
-            echo "- Examiner les logs d'erreur ci-dessus"
-            echo "- Vérifier les tests d'intégration complexes"
-            echo "- Contrôler les alertes de sécurité"
-          fi
-          echo "- Consulter les rapports détaillés dans les artifacts"
-          echo "- Planifier les optimisations pour la semaine suivante"
-          
-          echo ""
-          echo " Rapports disponibles dans les artifacts:"
-          echo "- Couverture de code (HTML + XML)"
-          echo "- Badge de couverture (SVG)"
-          echo "- Rapport sécurité Bandit (JSON)"
-          echo "- Analyse des dépendances Safety (JSON)"
