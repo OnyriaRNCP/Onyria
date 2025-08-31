@@ -1192,6 +1192,200 @@ def get_emotions_timeline_filtered(
     return timeline_list, list(all_emotions)
 
 
+def get_themes_stats_filtered(
+    user, period=None, start_date=None, end_date=None
+):
+    """
+    Analyse les thématiques récurrentes pour une période donnée
+    """
+    logger.info(
+        f"Analyse thématiques filtrées user {user.id} - period: {period}"
+    )
+
+    dreams_queryset = get_date_filter_queryset(
+        user, period, start_date, end_date
+    )
+    dreams = dreams_queryset.filter(transcription__isnull=False).exclude(
+        transcription=""
+    )
+
+    dream_texts = list(dreams.values_list('transcription', flat=True))
+    total_dreams = len(dream_texts)
+
+    if total_dreams < 2:
+        return {
+            'themes': {},
+            'total_dreams': total_dreams,
+            'top_theme': None,
+            'has_data': False,
+            'message': f'Au moins 2 rêves nécessaires pour détecter des thématiques',
+        }
+
+    # Utiliser la logique existante d'analyze_recurring_themes mais adaptée
+    if total_dreams >= 8 and BERTOPIC_AVAILABLE:
+        themes_results = _bertopic_analysis(dream_texts, total_dreams)
+        method = "BERTopic"
+    else:
+        themes_results = _category_analysis(dream_texts, total_dreams)
+        method = "Catégories"
+
+    if not themes_results:
+        return {
+            'themes': {},
+            'total_dreams': total_dreams,
+            'top_theme': None,
+            'has_data': False,
+            'message': 'Aucune thématique récurrente détectée',
+        }
+
+    # Formatage pour le frontend
+    themes_dict = {}
+    for theme_name, count in themes_results:
+        percentage = round((count / total_dreams) * 100, 1)
+        themes_dict[theme_name.capitalize()] = {
+            'count': count,
+            'percentage': percentage,
+        }
+
+    top_theme = {
+        'name': themes_results[0][0].capitalize(),
+        'count': themes_results[0][1],
+        'percentage': round((themes_results[0][1] / total_dreams) * 100, 1),
+    }
+
+    logger.info(
+        f"Thématiques analysées ({method}): {len(themes_results)} trouvées"
+    )
+
+    return {
+        'themes': themes_dict,
+        'total_dreams': total_dreams,
+        'top_theme': top_theme,
+        'has_data': True,
+        'method': method,
+    }
+
+
+def get_themes_timeline_filtered(
+    user, period=None, start_date=None, end_date=None
+):
+    """
+    Analyse l'évolution des thématiques dans le temps
+    Retourne les données pour un graphique temporel des thèmes
+    """
+    logger.info(f"Timeline thématiques user {user.id}")
+
+    dreams_queryset = get_date_filter_queryset(
+        user, period, start_date, end_date
+    )
+    dreams = (
+        dreams_queryset.filter(transcription__isnull=False)
+        .exclude(transcription="")
+        .order_by('created_at')
+    )
+
+    if dreams.count() < 2:
+        return [], []
+
+    # Grouper les rêves par semaine ou mois selon la période
+    if period in ['month', '3months']:
+        # Groupement par semaine
+        date_format = '%Y-W%U'  # Année-Semaine
+        display_format = lambda d: f"Sem {d.strftime('%U')}"
+    else:
+        # Groupement par mois
+        date_format = '%Y-%m'
+        display_format = lambda d: d.strftime('%m/%Y')
+
+    # Organiser les rêves par période
+    dreams_by_period = defaultdict(list)
+    for dream in dreams:
+        period_key = dream.created_at.strftime(date_format)
+        dreams_by_period[period_key].append(dream.transcription)
+
+    # Analyser chaque période
+    timeline_data = []
+    all_themes = set()
+
+    for period_key in sorted(dreams_by_period.keys()):
+        texts = dreams_by_period[period_key]
+
+        if len(texts) >= 2:
+            # Analyse des thèmes pour cette période
+            if len(texts) >= 5 and BERTOPIC_AVAILABLE:
+                themes_results = _bertopic_analysis(texts, len(texts))
+            else:
+                themes_results = _category_analysis(texts, len(texts))
+
+            # Préparer les données pour cette période
+            period_data = {'period': period_key, 'total_dreams': len(texts)}
+
+            if themes_results:
+                for theme_name, count in themes_results:
+                    theme_clean = theme_name.capitalize()
+                    period_data[theme_clean] = count
+                    all_themes.add(theme_clean)
+
+            timeline_data.append(period_data)
+
+    # S'assurer que toutes les périodes ont toutes les thématiques (avec 0 si absent)
+    for entry in timeline_data:
+        for theme in all_themes:
+            if theme not in entry:
+                entry[theme] = 0
+
+    return timeline_data, list(all_themes)
+
+
+def get_theme_distribution_by_emotion(
+    user, period=None, start_date=None, end_date=None
+):
+    """
+    Analyse la répartition des thématiques par émotion dominante
+    Utile pour comprendre quelles thématiques génèrent quelles émotions
+    """
+    logger.info(f"Distribution thèmes-émotions user {user.id}")
+
+    dreams_queryset = get_date_filter_queryset(
+        user, period, start_date, end_date
+    )
+    dreams = dreams_queryset.filter(
+        transcription__isnull=False, dominant_emotion__isnull=False
+    ).exclude(transcription="")
+
+    if dreams.count() < 3:
+        return {}
+
+    # Grouper par émotion
+    dreams_by_emotion = defaultdict(list)
+    for dream in dreams:
+        emotion = format_emotion_label(dream.dominant_emotion)
+        dreams_by_emotion[emotion].append(dream.transcription)
+
+    # Analyser les thèmes pour chaque émotion
+    emotion_themes = {}
+
+    for emotion, texts in dreams_by_emotion.items():
+        if len(texts) >= 2:
+            if len(texts) >= 5 and BERTOPIC_AVAILABLE:
+                themes_results = _bertopic_analysis(texts, len(texts))
+            else:
+                themes_results = _category_analysis(texts, len(texts))
+
+            if themes_results:
+                # Prendre les 3 premiers thèmes pour cette émotion
+                emotion_themes[emotion] = [
+                    {
+                        'name': theme_name.capitalize(),
+                        'count': count,
+                        'percentage': round((count / len(texts)) * 100, 1),
+                    }
+                    for theme_name, count in themes_results[:3]
+                ]
+
+    return emotion_themes
+
+
 # ---------- NORMALISATION DES LABELS ----------
 
 
