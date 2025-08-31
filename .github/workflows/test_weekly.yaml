@@ -1,7 +1,6 @@
 name: Tests Hebdomadaires Complets
 
 on:
-  push:
   schedule:
     - cron: "0 2 * * 1"
   workflow_dispatch:
@@ -74,8 +73,8 @@ jobs:
         continue-on-error: true
         run: |
           echo "Vérification des dépendances avec Safety..."
-          safety check --json --output safety-report.json || true
-          safety check
+          safety status --json --output safety-report.json || true
+          safety status
       
       - name: Run All Tests with Coverage
         working-directory: DreamProject
