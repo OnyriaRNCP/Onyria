@@ -7,10 +7,10 @@ import time
 import tempfile
 import logging
 import httpx
+import random
 import nltk
 import spacy
 import unicodedata
-
 from typing import List, Dict
 from datetime import datetime, timedelta
 from django.utils import timezone
@@ -21,16 +21,14 @@ from django.conf import settings
 from dotenv import load_dotenv
 from groq import Groq
 from mistralai import Mistral
-
+from .metrics.runtime import metric_ok, metric_fail
 from nltk.corpus import stopwords
 from nltk.stem import SnowballStemmer
-
 from bertopic import BERTopic
 from sklearn.feature_extraction.text import CountVectorizer
 from sentence_transformers import SentenceTransformer
 from umap import UMAP
 from hdbscan import HDBSCAN
-
 from collections import Counter, defaultdict
 from .models import Dream
 from typing import Any, Mapping, Optional
@@ -44,8 +42,33 @@ from .constants import (
 # Chargement des variables d'environnement
 load_dotenv()
 
+# Logs
 logger = logging.getLogger(__name__)
 
+
+# Récupération de la configuration centralisée
+AI_CONFIG = settings.AI_CONFIG
+BASE_DIR = settings.BASE_DIR
+
+# Clients externes avec garde-fou contre les clés manquantes
+groq_client = (
+    Groq(
+        api_key=settings.GROQ_API_KEY,
+        http_client=httpx.Client(
+            http2=False, timeout=AI_CONFIG['API_TIMEOUT']
+        ),
+    )
+    if settings.GROQ_API_KEY
+    else None
+)
+
+mistral_client = (
+    Mistral(api_key=settings.MISTRAL_API_KEY)
+    if settings.MISTRAL_API_KEY
+    else None
+)
+
+#Config pour analyse thématique
 try:
     nlp = spacy.load("fr_core_news_sm")
 except OSError:
@@ -99,30 +122,7 @@ except ImportError:
     BERTOPIC_AVAILABLE = False
     bertopic_model = None
 
-# Récupération de la configuration centralisée
-AI_CONFIG = settings.AI_CONFIG
-BASE_DIR = settings.BASE_DIR
-
-# Clients externes avec garde-fou contre les clés manquantes
-groq_client = (
-    Groq(
-        api_key=settings.GROQ_API_KEY,
-        http_client=httpx.Client(
-            http2=False, timeout=AI_CONFIG['API_TIMEOUT']
-        ),
-    )
-    if settings.GROQ_API_KEY
-    else None
-)
-
-mistral_client = (
-    Mistral(api_key=settings.MISTRAL_API_KEY)
-    if settings.MISTRAL_API_KEY
-    else None
-)
-
 # ---------- FONCTIONS UTILITAIRES ----------
-
 
 def read_file(file_path):
     """Lit un fichier depuis /prompt avec encodage UTF-8"""
@@ -130,13 +130,14 @@ def read_file(file_path):
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
 
-
 def softmax(preds):
     """Applique softmax à un dictionnaire de prédictions"""
-    exp = {k: math.exp(v) for k, v in preds.items()}
-    total = sum(exp.values())
+    if not preds:
+        return {}
+    m = max(preds.values())
+    exp = {k: math.exp(v - m) for k, v in preds.items()}
+    total = sum(exp.values()) or 1.0
     return {k: v / total for k, v in exp.items()}
-
 
 def validate_and_fix_interpretation(interpretation_data):
     """
@@ -194,7 +195,6 @@ def validate_and_fix_interpretation(interpretation_data):
     logger.debug("Validation interprétation terminée avec succès")
     return fixed_interpretation
 
-
 # ---------- SYSTÈME DE RETRY ----------
 
 
@@ -217,7 +217,6 @@ def _is_retryable_transcription_error(err: Exception) -> bool:
         "429",
     ]
     return any(k in msg for k in keywords)
-
 
 def _transcribe_via_httpx(file_path: str, language: str = "fr") -> str | None:
     """
@@ -267,9 +266,7 @@ def _transcribe_via_httpx(file_path: str, language: str = "fr") -> str | None:
         logger.error(f"HTTPX fallback échec: {e}")
         return None
 
-
 # ---------- TRANSCRIPTION ----------
-
 
 def transcribe_audio(audio_data, language="fr"):
     """Transcrit un audio en texte avec Whisper de Groq + système retry"""
@@ -278,20 +275,18 @@ def transcribe_audio(audio_data, language="fr"):
 
     # Garde-fou si la clé est absente ou le client non initialisé
     if not settings.GROQ_API_KEY or groq_client is None:
-        logger.error(
-            "Échec transcription audio: GROQ_API_KEY manquante ou client non initialisé"
-        )
+        logger.error("Échec transcription audio: GROQ_API_KEY manquante ou client non initialisé")
+        metric_fail("groq", "transcribe", int((time.time() - start_time) * 1000), reason="no_api_key")
         return None
 
     temp_file_path = None
+    last_error = None
     try:
         with tempfile.NamedTemporaryFile(
             suffix='.wav', delete=False
         ) as temp_file:
             temp_file.write(audio_data)
             temp_file_path = temp_file.name
-
-        last_error = None
 
         # Système de retry avec backoff exponentiel et configuration centralisée
         for attempt in range(1, AI_CONFIG['TRANSCRIBE_MAX_RETRIES'] + 1):
@@ -314,16 +309,11 @@ def transcribe_audio(audio_data, language="fr"):
 
                 # Alertes sur contenu problématique
                 if len(transcription.text) < 10:
-                    logger.warning(
-                        f"Transcription très courte: {len(transcription.text)} caractères"
-                    )
-
+                    logger.warning(f"Transcription très courte: {len(transcription.text)} caractères")
                 if duration > 5:
                     logger.warning(f"Transcription lente: {duration:.2f}s")
-
-                logger.info(
-                    f"Transcription réussie - {len(transcription.text)} caractères en {duration:.2f}s"
-                )
+                logger.info(f"Transcription réussie - {len(transcription.text)} caractères en {duration:.2f}s")
+                metric_ok("groq", "transcribe", int(duration * 1000))
                 return transcription.text
 
             except Exception as e:
@@ -353,8 +343,21 @@ def transcribe_audio(audio_data, language="fr"):
         if result:
             duration = time.time() - start_time
             logger.info(f"Fallback HTTPX réussi en {duration:.2f}s")
-
-        return result
+            metric_ok("groq", "transcribe", int(duration * 1000))
+            return result
+        else:
+            duration = time.time() - start_time
+            reason = "httpx_fallback_failed"
+            if last_error is not None:
+                msg = str(last_error).lower()
+                if "rate" in msg:
+                    reason = "rate_limit"
+                elif "quota" in msg:
+                    reason = "quota"
+                elif "timeout" in msg:
+                    reason = "timeout"
+            metric_fail("groq", "transcribe", int(duration * 1000), reason=reason)
+            return None
 
     finally:
         # Nettoyage du fichier temporaire même en cas d'erreur
@@ -366,9 +369,28 @@ def transcribe_audio(audio_data, language="fr"):
                     f"Impossible de supprimer le fichier temporaire: {e}"
                 )
 
-
 # ---------- SYSTÈME DE FALLBACK ----------
 
+# Concrétisation paramétrable depuis settings.AI_CONFIG (DRY, pas de doublon)
+try:
+    RETRYABLE_STATUS = set(AI_CONFIG['RETRYABLE_STATUS'])
+    RETRYABLE_KEYWORDS = tuple(AI_CONFIG['RETRYABLE_KEYWORDS'])
+except KeyError as e:
+    logger.error(f"AI_CONFIG manquant: {e}. Règles de retry vides par sécurité.")
+    RETRYABLE_STATUS = set()
+    RETRYABLE_KEYWORDS = tuple()
+
+def _extract_status_and_text(e: Exception):
+    status = getattr(e, "status_code", None)
+    body_text = ""
+    resp = getattr(e, "response", None)
+    if resp is not None:
+        status = getattr(resp, "status_code", status)
+        try:
+            body_text = resp.text or ""
+        except Exception:
+            body_text = ""
+    return status, body_text
 
 def safe_mistral_call(model, messages, operation="API call"):
     """
@@ -427,25 +449,31 @@ def safe_mistral_call(model, messages, operation="API call"):
             attempt_duration = time.time() - attempt_start
 
             # Erreurs qui nécessitent un fallback
-            if any(
-                keyword in error_msg
-                for keyword in [
+            status_code, body_text = _extract_status_and_text(e)
+            merged_msg = (error_msg + " " + body_text.lower()).strip()
+
+            retryable = (
+                (status_code in RETRYABLE_STATUS) or
+                any(k in merged_msg for k in RETRYABLE_KEYWORDS) or
+                any(k in merged_msg for k in [
                     "insufficient_quota",
                     "quota_exceeded",
                     "rate_limit",
                     "model_not_found",
                     "service_unavailable",
                     "timeout",
-                ]
-            ):
-                if "quota" in error_msg:
-                    logger.warning(
-                        f"[{operation}] QUOTA ATTEINT - {current_model}"
-                    )
-                elif "rate_limit" in error_msg:
-                    logger.warning(
-                        f"[{operation}] RATE LIMIT - {current_model}"
-                    )
+                ])
+            )
+
+            if retryable:
+                base = AI_CONFIG.get('CHAT_RETRY_BASE_DELAY_S', 0.5)
+                maxd = AI_CONFIG.get('CHAT_RETRY_MAX_DELAY_S', 3.0)
+                wait = min(base * (2 ** attempt), maxd) + random.uniform(0, 0.3)
+
+                if "quota" in merged_msg:
+                    logger.warning(f"[{operation}] QUOTA ATTEINT - {current_model}")
+                elif "rate_limit" in merged_msg or status_code == 429:
+                    logger.warning(f"[{operation}] RATE LIMIT - {current_model}")
                 else:
                     logger.warning(
                         f"[{operation}] Erreur {current_model}: {e}"
@@ -458,6 +486,7 @@ def safe_mistral_call(model, messages, operation="API call"):
                     )
                     return None
 
+                time.sleep(wait)
                 continue
             else:
                 logger.error(
@@ -467,9 +496,7 @@ def safe_mistral_call(model, messages, operation="API call"):
 
     return None
 
-
 # ---------- ANALYSE D'ÉMOTIONS ----------
-
 
 def analyze_emotions(text):
     """Renvoie le score des émotions + l'émotion dominante avec fallback"""
@@ -484,6 +511,7 @@ def analyze_emotions(text):
         {"role": "user", "content": text},
     ]
 
+    op_start = time.time()
     response = safe_mistral_call(
         model=AI_CONFIG['EMOTION_MODEL'],
         messages=messages,
@@ -491,9 +519,8 @@ def analyze_emotions(text):
     )
 
     if response is None:
-        logger.error(
-            "Échec analyse émotionnelle - tous les modèles indisponibles"
-        )
+        metric_fail("mistral", "emotion", int((time.time() - op_start) * 1000), reason="unavailable")
+        logger.error("Échec analyse émotionnelle - tous les modèles indisponibles")
         return None, None
 
     try:
@@ -505,13 +532,13 @@ def analyze_emotions(text):
             try:
                 raw = dict(raw)
             except Exception:
-                logger.error(
-                    f"Format inattendu des émotions (liste non convertible): {raw}"
-                )
+                logger.error(f"Format inattendu des émotions (liste non convertible): {raw}")
+                metric_fail("mistral", "emotion", int((time.time() - op_start) * 1000), reason="bad_format")
                 return None, None
 
         if not isinstance(raw, dict):
             logger.error(f"Format inattendu des émotions (type={type(raw)})")
+            metric_fail("mistral", "emotion", int((time.time() - op_start) * 1000), reason="bad_format")
             return None, None
 
         # Cast des valeurs non numériques
@@ -524,10 +551,12 @@ def analyze_emotions(text):
 
         if not cleaned:
             logger.error("Aucun score exploitable reçu")
+            metric_fail("mistral", "emotion", int((time.time() - op_start) * 1000), reason="empty")
             return None, None
 
         scores = softmax(cleaned)
         dominant = max(scores.items(), key=lambda x: x[1])
+        metric_ok("mistral", "emotion", int((time.time() - op_start) * 1000))
 
         logger.info(f"Émotion dominante: {dominant[0]} ({dominant[1]:.2f})")
         logger.debug(f"Scores détaillés: {json.dumps(scores, indent=2)}")
@@ -536,8 +565,8 @@ def analyze_emotions(text):
 
     except (json.JSONDecodeError, KeyError) as e:
         logger.error(f"Erreur parsing émotions: {e}")
+        metric_fail("mistral", "emotion", int((time.time() - op_start) * 1000), reason="bad_json")
         return None, None
-
 
 def classify_dream(emotions):
     """Détermine si le rêve est un cauchemar ou non"""
@@ -562,9 +591,7 @@ def classify_dream(emotions):
 
     return classification
 
-
 # ---------- INTERPRÉTATION ----------
-
 
 def interpret_dream(text):
     """Demande à Mistral une interprétation du rêve avec fallback et validation"""
@@ -576,6 +603,7 @@ def interpret_dream(text):
         {"role": "user", "content": text},
     ]
 
+    op_start = time.time()
     response = safe_mistral_call(
         model=AI_CONFIG['INTERPRETATION_MODEL'],
         messages=messages,
@@ -583,6 +611,7 @@ def interpret_dream(text):
     )
 
     if response is None:
+        metric_fail("mistral", "interpretation", int((time.time() - op_start) * 1000), reason="unavailable")
         logger.error("Échec interprétation - tous les modèles indisponibles")
         return None
 
@@ -596,19 +625,20 @@ def interpret_dream(text):
         )
 
         if validated_interpretation:
+            metric_ok("mistral", "interpretation", int((time.time() - op_start) * 1000))
             logger.info("Interprétation générée avec succès")
             return validated_interpretation
         else:
+            metric_fail("mistral", "interpretation", int((time.time() - op_start) * 1000), reason="validation_failed")
             logger.error("Échec validation interprétation")
             return None
 
     except (json.JSONDecodeError, KeyError) as e:
         logger.error(f"Erreur parsing interprétation: {e}")
+        metric_fail("mistral", "interpretation", int((time.time() - op_start) * 1000), reason="bad_json")
         return None
 
-
 # ---------- GÉNÉRATION D'IMAGES ----------
-
 
 def generate_image_from_text(user, prompt_text, dream_instance):
     """
@@ -616,9 +646,8 @@ def generate_image_from_text(user, prompt_text, dream_instance):
     Stocke l'image en base64 dans le modèle Dream.
     """
     if mistral_client is None:
-        logger.error(
-            f"Génération image impossible - MISTRAL_API_KEY manquante"
-        )
+        logger.error(f"Génération image impossible - MISTRAL_API_KEY manquante")
+        metric_fail("mistral", "image", 0, reason="no_api_key")
         return False
 
     logger.info(f"Génération image pour rêve {dream_instance.id}")
@@ -652,6 +681,7 @@ def generate_image_from_text(user, prompt_text, dream_instance):
             )
 
             if not file_id:
+                metric_fail("mistral", "image", int((time.time() - start_time) * 1000), reason="no_file")
                 logger.warning("Aucune image générée par l'agent")
                 return False
 
@@ -663,26 +693,28 @@ def generate_image_from_text(user, prompt_text, dream_instance):
 
             duration = time.time() - start_time
             logger.info(f"Image générée avec succès en {duration:.2f}s")
+            metric_ok("mistral", "image", int(duration * 1000))
             return True
 
         except Exception as e:
             error_msg = str(e).lower()
-            if any(
-                keyword in error_msg
-                for keyword in [
-                    "insufficient_quota",
-                    "quota_exceeded",
-                    "rate_limit",
-                ]
-            ):
+            reason = "error"
+            if "insufficient_quota" in error_msg or "quota" in error_msg:
                 logger.warning(f"Quota image atteint: {e}")
-                return False
+                reason = "quota"
+            elif "rate_limit" in error_msg or "too many requests" in error_msg:
+                logger.warning(f"Rate limit image: {e}")
+                reason = "rate_limit"
             else:
-                raise e
+                logger.error(f"Erreur image: {e}")
+
+            metric_fail("mistral", "image", int((time.time() - start_time) * 1000), reason=reason)
+            return False
 
     except Exception as e:
         duration = time.time() - start_time
         logger.error(f"Erreur génération image après {duration:.2f}s: {e}")
+        metric_fail("mistral", "image", int(duration * 1000), reason="exception")
         return False
 
 
@@ -1185,7 +1217,6 @@ def analyze_recurring_themes(user, min_dreams=2, min_occurrence=2):
     }
 # ---------- PROFIL ONYRIQUE ----------
 
-
 def get_profil_onirique_stats(user):
     """Calcule les statistiques du profil onirique d'un utilisateur"""
     logger.info(f"Calcul profil onirique user {user.id}")
@@ -1245,9 +1276,7 @@ def get_profil_onirique_stats(user):
         "thematique_percentage": theme_analysis['percentage'],
     }
 
-
 # ---------- DASHBOARD PERSONNEL ----------
-
 
 def get_date_filter_queryset(
     user, period=None, start_date=None, end_date=None
@@ -1297,7 +1326,6 @@ def get_date_filter_queryset(
 
     return queryset
 
-
 def get_dream_type_stats_filtered(
     user, period=None, start_date=None, end_date=None
 ):
@@ -1323,7 +1351,6 @@ def get_dream_type_stats_filtered(
         'counts': {'rêve': nb_reves, 'cauchemar': nb_cauchemars},
         'total': total,
     }
-
 
 def get_dream_type_timeline_filtered(
     user, period=None, start_date=None, end_date=None
@@ -1358,7 +1385,6 @@ def get_dream_type_timeline_filtered(
 
     return timeline_list
 
-
 def get_emotions_stats_filtered(
     user, period=None, start_date=None, end_date=None
 ):
@@ -1383,7 +1409,6 @@ def get_emotions_stats_filtered(
         'counts': dict(emotion_counts),
         'total': total,
     }
-
 
 def get_emotions_timeline_filtered(
     user, period=None, start_date=None, end_date=None
@@ -1433,7 +1458,6 @@ def _strip_accents(s: str) -> str:
     s = unicodedata.normalize("NFKD", s)
     return "".join(ch for ch in s if not unicodedata.combining(ch))
 
-
 def _first_value(val: Any) -> Any:
     """
     Prend la 1ère valeur si val est une liste/tuple, sinon renvoie val tel quel.
@@ -1444,7 +1468,6 @@ def _first_value(val: Any) -> Any:
     if isinstance(val, (list, tuple)):
         return _first_value(val[0] if val else "")
     return val
-
 
 def _to_str(val: Any) -> str:
     """
@@ -1467,10 +1490,7 @@ def _to_str(val: Any) -> str:
 _EMO_NORM = {_strip_accents(str(k)): v for k, v in EMOTION_LABELS.items()}
 _DREAM_NORM = {_strip_accents(str(k)): v for k, v in DREAM_TYPE_LABELS.items()}
 
-
-def _normalize_label(
-    val: Any, mapping: Optional[Mapping[str, str]] = None
-) -> str:
+def _normalize_label(val: Any, mapping: Optional[Mapping[str, str]] = None) -> str:
     """
     Normalise un label pour l'affichage/API:
     - Accepte clé brute, liste/tuple (on prend le 1er élément)
@@ -1491,11 +1511,9 @@ def _normalize_label(
         return norm_map.get(_strip_accents(raw), raw.capitalize())
     return raw.capitalize()
 
-
 def format_emotion_label(val: Any) -> str:
     """Ex: 'Joïe', 'joie', 'JOIE', 'joie ' -> 'Joie' (via EMOTION_LABELS si présent)"""
     return _normalize_label(val, EMOTION_LABELS)
-
 
 def format_dream_type_label(val: Any) -> str:
     """Ex: 'CAUCHEMAR', 'cauchemar', 'Cauchemàr' -> 'Cauchemar' (via DREAM_TYPE_LABELS si présent)"""

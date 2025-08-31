@@ -25,6 +25,8 @@ load_dotenv(ROOT_DIR / ".env")
 # Contexte tests/CI (GitHub Actions, etc.)
 IS_CI_OR_TEST = ("test" in sys.argv) or os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true"
 
+if IS_CI_OR_TEST: os.environ["APP_ENV"] = "test"
+
 # Configuration sécurisée - SECRET_KEY obligatoire (fallback uniquement en CI)
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
@@ -71,7 +73,21 @@ AI_CONFIG = {
         'mistral-medium': ['mistral-small-latest', 'open-mistral-7b'],
         'mistral-small-latest': ['open-mistral-7b'],
         'open-mistral-7b': [],
-    }
+    },
+
+    # RÈGLES DE RETRY/FALLBACK CHAT (source de vérité unique)
+    'RETRYABLE_STATUS': [408, 429, 500, 502, 503, 504],
+    'RETRYABLE_KEYWORDS': [
+        "too many requests",
+        "rate limit",
+        "service_unavailable",
+        "temporarily unavailable",
+        "timeout",
+        "capacity",
+        "service tier capacity",
+    ],
+    'CHAT_RETRY_BASE_DELAY_S': 0.5,
+    'CHAT_RETRY_MAX_DELAY_S': 3.0,
 }
 
 # Clés API depuis les variables d'environnement
