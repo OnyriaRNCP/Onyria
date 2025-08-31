@@ -20,7 +20,7 @@ import os
 import logging
 
 from ..models import Dream
-from ..utils import softmax, get_profil_onirique_stats
+from ..utils import softmax, get_profil_onirique_stats, analyze_recurring_themes
 
 User = get_user_model()
 
@@ -193,6 +193,27 @@ class CoreUtilsTest(TestCase):
         self.assertAlmostEqual(sum(normalized.values()), 1.0, places=5)
         self.assertGreater(normalized["joie"], normalized["tristesse"])
         self.assertGreater(normalized["tristesse"], normalized["peur"])
+        
+    def test_analyze_recurring_themes_core_functionality(self):
+        """
+        Test critique : La fonction d'analyse thématique ne plante jamais.
+        """
+        # Test avec aucun rêve
+        result = analyze_recurring_themes(self.user)
+        self.assertIsInstance(result, dict)
+        self.assertIn('top_theme', result)
+        
+        # Test avec un rêve
+        Dream.objects.create(
+            user=self.user,
+            transcription="Premier rêve pour test thématique",
+            dream_type="rêve"
+        )
+        
+        result = analyze_recurring_themes(self.user)
+        self.assertIsInstance(result, dict)
+        self.assertIn('total_dreams', result)
+        self.assertEqual(result['total_dreams'], 1)
 
     def test_profil_stats_core(self):
         """
@@ -217,6 +238,9 @@ class CoreUtilsTest(TestCase):
         self.assertEqual(stats['statut_reveuse'], 'âme rêveuse')
         self.assertEqual(stats['pourcentage_reveuse'], 100)
         self.assertEqual(stats['emotion_dominante'], 'joie')
+        self.assertIn('thematique_recurrente', stats)
+        self.assertIn('thematique_percentage', stats)
+        self.assertIsInstance(stats['thematique_recurrente'], str)
 
     def setUp(self):
         self.user = User.objects.create_user(
