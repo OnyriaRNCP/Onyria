@@ -73,16 +73,19 @@ class _Store:
         with self._lock:
             self.pipeline_durations.setdefault(step, []).append(int(duration_ms))
 
-    #Enregistrer fallback
+    # Enregistrer fallback (logique **par requête** : appeler UNE SEULE fois par requête
+    # avec la valeur d'`attempt` finale. Example: attempt=1 (pas de fallback) ; attempt=3 (2 fallbacks effectués))
     def record_fallback(self, provider: str, op: str, attempt: int) -> None:
         key = self._key(provider, op)
         with self._lock:
             bucket = self.fallbacks.setdefault(key, {"total_calls": 0, "fallback_calls": 0})
+            # total_calls = nombre de requêtes (car on appelle record_fallback une seule fois par requête)
             bucket["total_calls"] += 1
+            # fallback_calls = requêtes ayant eu AU MOINS un fallback (attempt > 1)
             if attempt > 1:
                 bucket["fallback_calls"] += 1
 
-    #Enregistrer retry
+    #Enregistrer retry (peut être appelé par requête ou par opération agrégée)
     def record_retry(self, provider: str, op: str, retry_count: int, backoff_ms: int) -> None:
         key = self._key(provider, op)
         with self._lock:
@@ -201,16 +204,11 @@ class _Store:
                     "avg_ms": int(round(avg)),
                 }
 
-            # Taux de fallback (sera surchargé en DEV)
-            fallback_out: Dict[str, Dict[str, float]] = {}
+            # Fallbacks — on ne renvoie **que** fallback_calls
+            fallback_out: Dict[str, Dict[str, int]] = {}
             for key, counts in self.fallbacks.items():
-                total = counts.get("total_calls", 0)
-                fallback = counts.get("fallback_calls", 0)
-                rate = (fallback / total) if total else 0.0
                 fallback_out[key] = {
-                    "total_calls": total,
-                    "fallback_calls": fallback,
-                    "fallback_rate": round(rate, 3)
+                    "fallback_calls": int(counts.get("fallback_calls", 0))
                 }
 
             # Statistiques retry
@@ -316,7 +314,12 @@ def _load_complete_jsonl_snapshot() -> Dict:
     # Reconstituer availability/latency depuis dev_metrics.jsonl
     availability_data = {}
     latency_data = {}
-    
+    errors_data = {}
+
+    # --- Structures pour fallbacks / retries depuis JSONL (logique PAR REQUÊTE) ---
+    fallback_data: Dict[str, Dict[str, int]] = {}
+    retry_data: Dict[str, Dict[str, int]] = {}
+
     # 1. Charger dev_metrics.jsonl si disponible
     if os.path.exists(_METRICS_PATH):
         try:
@@ -330,19 +333,43 @@ def _load_complete_jsonl_snapshot() -> Dict:
                     op = rec.get("op")
                     status = rec.get("status")
                     latency_ms = rec.get("latency_ms")
-                    
+                    reason = rec.get("reason")
+
+                    # Gestion des événements fallback / retry (persistés par requête)
+                    event = rec.get("event")
+                    if provider and op and event == "fallback":
+                        key = f"{provider}.{op}"
+                        attempt = rec.get("attempt", 1)
+                        bucket = fallback_data.setdefault(key, {"total_calls": 0, "fallback_calls": 0})
+                        bucket["total_calls"] += 1            # une ligne = une requête
+                        if attempt > 1:
+                            bucket["fallback_calls"] += 1      # a eu au moins un fallback
+                        continue
+
+                    if provider and op and event == "retry":
+                        key = f"{provider}.{op}"
+                        rc = int(rec.get("retry_count", 0) or 0)
+                        bo = int(rec.get("backoff_ms", 0) or 0)
+                        bucket = retry_data.setdefault(key, {"total_retries": 0, "backoff_total_ms": 0})
+                        bucket["total_retries"] += rc
+                        bucket["backoff_total_ms"] += bo
+                        continue
+
                     if not provider or not op or not status:
                         continue
-                        
+
                     key = f"{provider}.{op}"
                     availability_data.setdefault(key, {"ok": 0, "fail": 0})
                     latency_data.setdefault(key, [])
-                    
+
                     if status == "success":
                         availability_data[key]["ok"] += 1
                     else:
                         availability_data[key]["fail"] += 1
-                        
+                        if reason:
+                            errors_data.setdefault(key, {})
+                            errors_data[key][reason] = errors_data[key].get(reason, 0) + 1
+
                     if latency_ms is not None:
                         latency_data[key].append(int(latency_ms))
         except Exception as e:
@@ -350,12 +377,11 @@ def _load_complete_jsonl_snapshot() -> Dict:
 
     # 2. Charger les données depuis dev_traces.jsonl
     pipeline_data = {}
-    fallback_data = {}
     sse_sessions = []
     total_dreams = 0
     first_ts = None
     last_ts = None
-    
+
     try:
         with open(_TRACES_PATH, "r", encoding="utf-8") as f:
             for line in f:
@@ -363,7 +389,7 @@ def _load_complete_jsonl_snapshot() -> Dict:
                 if not line:
                     continue
                 rec = json.loads(line)
-                
+
                 total_dreams += 1
                 ts = rec.get("ts")
                 if ts:
@@ -371,21 +397,13 @@ def _load_complete_jsonl_snapshot() -> Dict:
                         first_ts = ts
                     if last_ts is None or ts > last_ts:
                         last_ts = ts
-                
+
                 # Pipeline durations
                 for step_key in ["transcribe_ms", "emotion_ms", "image_ms", "interpretation_ms", "total_duration_ms"]:
                     if rec.get(step_key):
                         final_key = "total_workflow_ms" if step_key == "total_duration_ms" else step_key
                         pipeline_data.setdefault(final_key, []).append(rec[step_key])
-                
-                # Fallbacks (simuler 1 appel par provider par rêve) - AVEC IMAGE
-                providers = ["groq.transcribe", "mistral.emotion", "mistral.interpretation", "mistral.image"]
-                for provider_key in providers:
-                    if provider_key not in fallback_data:
-                        fallback_data[provider_key] = {"total_calls": 0, "fallback_calls": 0}
-                    fallback_data[provider_key]["total_calls"] += 1
-                    # Aucun fallback simulé
-                
+
                 # SSE sessions (1 par rêve)
                 sse_sessions.append({
                     "started_at": rec.get("started_at", time.time()),
@@ -394,11 +412,11 @@ def _load_complete_jsonl_snapshot() -> Dict:
                     "completed": True,
                     "aborted": False
                 })
-                
+
     except Exception as e:
         logger.warning(f"Erreur lecture dev_traces.jsonl: {e}")
         return {}
-    
+
     # 3. Formater availability avec success_rate
     availability_out = {}
     for key, counts in availability_data.items():
@@ -411,7 +429,7 @@ def _load_complete_jsonl_snapshot() -> Dict:
             "fail": fail,
             "success_rate": round(rate, 3)
         }
-    
+
     # 4. Formater latency avec percentiles
     latency_out = {}
     for key, values in latency_data.items():
@@ -430,7 +448,7 @@ def _load_complete_jsonl_snapshot() -> Dict:
             "p99_ms": int(p99),
             "avg_ms": int(round(avg)),
         }
-    
+
     # 5. Formater pipeline durations
     pipeline_out = {}
     for step, values in pipeline_data.items():
@@ -449,35 +467,8 @@ def _load_complete_jsonl_snapshot() -> Dict:
             "p99_ms": int(p99),
             "avg_ms": int(round(avg)),
         }
-    
-    # 6. Formater fallbacks
-    fallback_out = {}
-    for key, counts in pipeline_data.items():
-        pass  # (placeholder; pas utilisé ici)
 
-    fallback_out = {}
-    for key, counts in {}.items():
-        pass 
-
-    # 6. Formater fallbacks (reprise correcte)
-    fallback_out = {}
-    for key, counts in {}.items():
-        pass
-
-    # 6. Formater fallbacks réel
-    fallback_out = {}
-    for key, counts in {}.items():
-        pass
-
-    # 6. Formater fallbacks (de la version fournie)
-    fallback_out = {}
-    for key, counts in {}.items():
-        pass
-
-    # 6. Formater fallbacks (version effective plus haut déjà calculée)
-    # (aucun changement ici pour respecter ta consigne)
-
-    # 7. Formater SSE quality
+    # 6. Fallbacks & 7. SSE quality
     sse_out = {
         "total_sessions": len(sse_sessions),
         "completed_sessions": len([s for s in sse_sessions if s["completed"]]),
@@ -487,30 +478,33 @@ def _load_complete_jsonl_snapshot() -> Dict:
         "avg_ttfb_ms": 1000,
         "avg_events_per_session": 5.0
     }
-    
+
     if sse_sessions:
         sse_out["completion_rate"] = round(sse_out["completed_sessions"] / len(sse_sessions), 3)
         sse_out["abort_rate"] = round(sse_out["aborted_sessions"] / len(sse_sessions), 3)
-    
+
     # 8. Totaux
     total_ok = sum(counts.get("ok", 0) for counts in availability_data.values())
     total_fail = sum(counts.get("fail", 0) for counts in availability_data.values())
     total_all = total_ok + total_fail
-    
+
+    # IMPORTANT: on ne renvoie que fallback_calls (pas total_calls) en DEV aussi
+    fallback_trimmed = {k: {"fallback_calls": v.get("fallback_calls", 0)} for k, v in fallback_data.items()}
+
     return {
         "started_at": int(first_ts) if first_ts else int(time.time()),
         "uptime_s": (last_ts - first_ts) if (first_ts and last_ts) else 0,
         "availability": availability_out,
         "latency": latency_out,
         "pipeline_durations": pipeline_out,
-        "fallbacks": fallback_out,
-        "retries": {},  # Pas de données retry historiques
+        "fallbacks": fallback_trimmed,       # ← uniquement fallback_calls
+        "retries": retry_data,               # <— agrégé depuis JSONL
         "sse_quality": sse_out,
-        "errors": {},   # Pas de détail des erreurs historiques
+        "errors": errors_data, 
         "totals": {"ok": total_ok, "fail": total_fail, "all": total_all},
         "last_seen": int(last_ts) if last_ts else None,
         "notes": f"DEV HISTORICAL MODE: ALL metrics from JSONL files. {total_dreams} dreams from {_TRACES_PATH}.",
-        "_total_dreams": total_dreams  # Info supplémentaire
+        "_total_dreams": total_dreams
     }
 
 
@@ -523,19 +517,42 @@ def metric_pipeline_duration(step: str, duration_ms: int) -> None:
     logger.info(f"[PIPELINE] step={step} duration_ms={duration_ms}")
 
 def metric_fallback(provider: str, op: str, attempt: int) -> None:
-    """Enregistre une tentative avec info de fallback"""
+    """
+    Enregistre le Fallback **par requête** (APPELER UNE SEULE FOIS PAR REQUÊTE)
+    - attempt = 1  → pas de fallback
+    - attempt > 1  → la requête a eu au moins un fallback
+    """
     if not _COLLECT_ENABLED:
         return
     _STORE.record_fallback(provider, op, attempt)
     if attempt > 1:
         logger.info(f"[FALLBACK] provider={provider} op={op} attempt={attempt}")
+    # Persistance DEV (par requête)
+    if _APP_ENV == "dev" and _PERSIST_METRICS:
+        _append_jsonl(_METRICS_PATH, {
+            "ts": time.time(),
+            "provider": provider,
+            "op": op,
+            "event": "fallback",
+            "attempt": attempt,  # valeur finale
+        })
 
 def metric_retry(provider: str, op: str, retry_count: int, backoff_ms: int) -> None:
-    """Enregistre des statistiques de retry"""
+    """Enregistre des statistiques de retry (agrégées ou par requête)"""
     if not _COLLECT_ENABLED:
         return
     _STORE.record_retry(provider, op, retry_count, backoff_ms)
     logger.info(f"[RETRY] provider={provider} op={op} retries={retry_count} backoff_ms={backoff_ms}")
+    # Persistance DEV
+    if _APP_ENV == "dev" and _PERSIST_METRICS:
+        _append_jsonl(_METRICS_PATH, {
+            "ts": time.time(),
+            "provider": provider,
+            "op": op,
+            "event": "retry",
+            "retry_count": retry_count,
+            "backoff_ms": backoff_ms,
+        })
 
 def metric_sse_start(session_id: str) -> None:
     """Démarre le tracking d'une session SSE"""
@@ -712,7 +729,7 @@ def calculate_business_metrics() -> Dict:
             completed_dreams * PRICING['mistral']['interpretation'] +
             images_count * PRICING['mistral']['image']
         )
-        
+
         # Durée depuis les vraies dates JSONL
         session_duration_hours = 0.0
         if dev_traces and dev_traces.get("first_result_at") and dev_traces.get("last_result_at"):
@@ -949,6 +966,8 @@ def _load_metrics_jsonl_into_store() -> None:
     """
     Rejoue les lignes de .dev/dev_metrics.jsonl dans le _STORE pour
     agréger à travers les redémarrages en DEV.
+    (Note: ceci rejoue uniquement OK/FAIL car les fallbacks/retries sont
+    directement rechargés via _load_complete_jsonl_snapshot en mode historical.)
     """
     if not (_APP_ENV == "dev" and _PERSIST_METRICS):
         return
