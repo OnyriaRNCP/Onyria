@@ -66,8 +66,8 @@ jobs:
         continue-on-error: true
         run: |
           echo "Audit sécurité avec Bandit..."
-          bandit -r DreamProject/diary/ -f json -o bandit-report.json || true
-          bandit -r DreamProject/diary/ -f txt
+          bandit -r DreamProject/accounts/ DreamProject/diary/ -f json -o bandit-report.json || true
+          bandit -r DreamProject/accounts/ DreamProject/diary/ -f txt
       
       - name: Security Audit - Safety
         continue-on-error: true
@@ -80,7 +80,7 @@ jobs:
         working-directory: DreamProject
         run: |
           echo "Tests complets avec analyse de couverture..."
-          coverage run --source='diary' --omit='*/migrations/*,*/tests/*' manage.py test diary.tests --verbosity=2
+          coverage run --source='account, diary' --omit='*/migrations/*,*/tests/*' manage.py test accounts.tests diary.tests --verbosity=2
           coverage report --show-missing
           coverage html
           coverage xml
