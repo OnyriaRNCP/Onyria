@@ -30,10 +30,10 @@ jobs:
       - name: Format code with Black
         run: black .
 
-      - name: Run core tests (account)
+      - name: Run core tests (accounts)
         working-directory: DreamProject
         run: |
-          python manage.py test account.tests.test_core diary.tests.test_security --verbosity=1 --parallel --keepdb
+          python manage.py test accounts.tests.test_core diary.tests.test_security --verbosity=1 --parallel --keepdb
 
       - name: Run core tests(diary)
         working-directory: DreamProject
