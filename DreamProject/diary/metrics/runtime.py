@@ -716,8 +716,13 @@ def calculate_business_metrics() -> Dict:
             except Exception:
                 session_duration_hours = 0.0
         
-        notes = f"DEV: Coûts fixes basés sur {completed_dreams} rêves JSONL ({images_count} avec images). Période: {session_duration_hours:.1f}h."
-        
+        notes = (
+            f"!! Fixed costs based on {completed_dreams} dreams JSONL "
+            f"({images_count} with images). "
+            "More accurate costs can be established later using actual audio duration, "
+            "token counts (input/output), image parameters, and official API pricing updates."
+        )
+
     else:
         # PROD: session active
         availability = _STORE.availability
@@ -738,8 +743,13 @@ def calculate_business_metrics() -> Dict:
         )
         
         session_duration_hours = round((time.time() - _STORE.started_at) / 3600, 1)
-        notes = f"PROD: Coûts fixes par session active. {completed_dreams} rêves depuis déploiement. Période: {session_duration_hours:.1f}h."
-    
+        notes = (
+            f"!! Fixed costs based on {completed_dreams} dreams JSONL "
+            f"({images_count} with images). "
+            "More accurate costs can be established later using actual audio duration, "
+            "token counts (input/output), image parameters, and official API pricing updates."
+        )
+
     dreams_per_day = calculate_real_dreams_per_day()
     cost_per_dream = estimated_cost / completed_dreams if completed_dreams > 0 else 0
     
@@ -841,33 +851,27 @@ def get_dev_traces_summary() -> Optional[Dict]:
 
 
 def _get_deployment_info() -> Dict:
-    """Infos de déploiement."""
+    """Infos de déploiement Render ou local."""
     deployment_info = {
         "process_start": _iso_from_ts(_STORE.started_at),
         "python_version": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
     }
-    
-    try:
-        git_commit = os.getenv("GIT_COMMIT") or os.getenv("HEROKU_SLUG_COMMIT") or os.getenv("SOURCE_VERSION")
-        if git_commit:
-            deployment_info["git_commit"] = git_commit[:7]
-    except:
-        pass
-    
-    try:
-        build_number = os.getenv("BUILD_NUMBER") or os.getenv("HEROKU_RELEASE_VERSION") or os.getenv("RENDER_SERVICE_VERSION")
-        if build_number:
-            deployment_info["build_number"] = build_number
-    except:
-        pass
-    
-    try:
-        platform = os.getenv("DYNO") and "heroku" or os.getenv("RENDER") and "render" or "local"
-        deployment_info["platform"] = platform
-    except:
-        deployment_info["platform"] = "unknown"
-    
+
+    # Commit Git (Render injecte RENDER_GIT_COMMIT)
+    git_commit = os.getenv("RENDER_GIT_COMMIT") or os.getenv("SOURCE_VERSION")
+    if git_commit:
+        deployment_info["git_commit"] = git_commit[:7]
+
+    # Version Render
+    build_number = os.getenv("RENDER_SERVICE_VERSION")
+    if build_number:
+        deployment_info["build_number"] = build_number
+
+    # Plateforme
+    deployment_info["platform"] = "render" if os.getenv("RENDER") else "local"
+
     return deployment_info
+
 
 
 def get_env_info() -> Dict:
