@@ -136,7 +136,7 @@ def analyse_from_voice(request):
     """Version SSE (Server-Sent Events) de analyse_from_voice pour affichage progressif des éléments"""
 
     def event_stream():
-        # ID de session SSE unique pour tracking
+        #ID de session SSE unique pour tracking
         session_id = str(uuid.uuid4())
         metric_sse_start(session_id)
         first_event_sent = False
@@ -144,7 +144,7 @@ def analyse_from_voice(request):
         start_time = time.time()
         dream = None  # suivi du rêve provisoire pour pouvoir le supprimer en cas d'échec critique
         
-        # Variables pour tracking des durées par étape
+        #Variables pour tracking des durées par étape
         step_times = {}
         
         try:
@@ -173,7 +173,7 @@ def analyse_from_voice(request):
                 metric_sse_abort(session_id)
                 return
             
-            # Premier événement SSE
+            #Premier événement SSE
             if not first_event_sent:
                 metric_sse_first_event(session_id)
                 first_event_sent = True
@@ -276,9 +276,12 @@ def analyse_from_voice(request):
             if total_duration > settings.AI_CONFIG['SSE_SLOW_WARNING_THRESHOLD']:
                 logger.warning(f"Analyse SSE lente: {total_duration:.2f}s pour user {request.user.id}")
             
+            #Enregistrer le temps total de workflow complet
+            metric_pipeline_duration("total_workflow_ms", int(total_duration * 1000))
+            
             logger.info(f"Analyse SSE user {request.user.id} réussie - Type: {dream_type}, Émotion: {raw_dominant_key} en {total_duration:.2f}s")
 
-            # --- en DEV, on garde une trace "par rêve" (historique, max 100) avec durées d'étape ---
+            # ---en DEV, on garde une trace "par rêve" (historique, max 100) avec durées d'étape ---
             try:
                 record_dream_trace(
                     dream_id=dream.id,
