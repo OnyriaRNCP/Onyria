@@ -136,7 +136,7 @@ def analyse_from_voice(request):
     """Version SSE (Server-Sent Events) de analyse_from_voice pour affichage progressif des éléments"""
 
     def event_stream():
-        # ID de session SSE unique pour tracking
+        #ID de session SSE unique pour tracking
         session_id = str(uuid.uuid4())
         metric_sse_start(session_id)
         first_event_sent = False
@@ -144,7 +144,7 @@ def analyse_from_voice(request):
         start_time = time.time()
         dream = None  # suivi du rêve provisoire pour pouvoir le supprimer en cas d'échec critique
         
-        # Variables pour tracking des durées par étape
+        #Variables pour tracking des durées par étape
         step_times = {}
         
         try:
@@ -173,7 +173,7 @@ def analyse_from_voice(request):
                 metric_sse_abort(session_id)
                 return
             
-            # Premier événement SSE
+            #Premier événement SSE
             if not first_event_sent:
                 metric_sse_first_event(session_id)
                 first_event_sent = True
@@ -276,9 +276,12 @@ def analyse_from_voice(request):
             if total_duration > settings.AI_CONFIG['SSE_SLOW_WARNING_THRESHOLD']:
                 logger.warning(f"Analyse SSE lente: {total_duration:.2f}s pour user {request.user.id}")
             
+            #Enregistrer le temps total de workflow complet
+            metric_pipeline_duration("total_workflow_ms", int(total_duration * 1000))
+            
             logger.info(f"Analyse SSE user {request.user.id} réussie - Type: {dream_type}, Émotion: {raw_dominant_key} en {total_duration:.2f}s")
 
-            # --- en DEV, on garde une trace "par rêve" (historique, max 100) avec durées d'étape ---
+            # ---en DEV, on garde une trace "par rêve" (historique, max 100) avec durées d'étape ---
             try:
                 record_dream_trace(
                     dream_id=dream.id,
@@ -289,7 +292,6 @@ def analyse_from_voice(request):
                     has_image=bool(getattr(dream, "image_url", None)),
                     total_duration_ms=int(total_duration * 1000),
                     started_at_ts=float(start_time),
-                    # NOUVEAU: durées par étape
                     transcribe_ms=transcribe_duration,
                     emotion_ms=emotion_duration,
                     image_ms=image_duration,
@@ -303,6 +305,11 @@ def analyse_from_voice(request):
             metric_sse_event(session_id)
             metric_sse_complete(session_id)
             yield f"data: {json.dumps({'step': 'complete', 'success': True})}\n\n"
+
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, GeneratorExit):
+            # Connexion interrompue côté client (ex : page quittée)
+            metric_sse_abort(session_id)
+            return
 
         except Exception as e:
             duration = (
@@ -325,24 +332,6 @@ def analyse_from_voice(request):
     )
     response['Cache-Control'] = 'no-cache'
     return response
-
-
-def _safe_cleanup_dream(dream, reason="erreur"):
-    """
-    Supprime un rêve en toute sécurité avec logging approprié.
-    Fonction utilitaire pour éviter les try/except/pass.
-    """
-    if dream is None:
-        return
-
-    try:
-        dream_id = dream.id
-        dream.delete()
-        logger.info(f"Rêve {dream_id} supprimé après {reason}")
-    except Dream.ProtectedError as e:
-        logger.error(f"Impossible de supprimer le rêve (contraintes FK): {e}")
-    except Exception as e:
-        logger.error(f"Erreur inattendue lors de suppression du rêve: {e}")
 
 
 @login_required

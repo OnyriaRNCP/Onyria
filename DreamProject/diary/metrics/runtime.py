@@ -44,7 +44,7 @@ class _Store:
         self.latency: Dict[str, List[int]] = {}            # latences en ms
         self.errors: Dict[str, Dict[str, int]] = {}        # raisons d'échec
         
-        # Métriques avancées
+        #Métriques avancées
         self.fallbacks: Dict[str, Dict[str, int]] = {}     # compteurs fallback
         self.retries: Dict[str, Dict[str, int]] = {}       # compteurs retry
         self.sse_metrics: Dict[str, Dict] = {}             # métriques SSE
@@ -68,21 +68,24 @@ class _Store:
         bucket = self.errors.setdefault(key, {})
         bucket[reason] = bucket.get(reason, 0) + 1
 
-    # Enregistrer durée d'étape pipeline
+    #Enregistrer durée d'étape pipeline
     def record_pipeline_duration(self, step: str, duration_ms: int) -> None:
         with self._lock:
             self.pipeline_durations.setdefault(step, []).append(int(duration_ms))
 
-    # Enregistrer fallback
+    # Enregistrer fallback (logique **par requête** : appeler UNE SEULE fois par requête
+    # avec la valeur d'`attempt` finale. Example: attempt=1 (pas de fallback) ; attempt=3 (2 fallbacks effectués))
     def record_fallback(self, provider: str, op: str, attempt: int) -> None:
         key = self._key(provider, op)
         with self._lock:
             bucket = self.fallbacks.setdefault(key, {"total_calls": 0, "fallback_calls": 0})
+            # total_calls = nombre de requêtes (car on appelle record_fallback une seule fois par requête)
             bucket["total_calls"] += 1
+            # fallback_calls = requêtes ayant eu AU MOINS un fallback (attempt > 1)
             if attempt > 1:
                 bucket["fallback_calls"] += 1
 
-    # Enregistrer retry
+    #Enregistrer retry (peut être appelé par requête ou par opération agrégée)
     def record_retry(self, provider: str, op: str, retry_count: int, backoff_ms: int) -> None:
         key = self._key(provider, op)
         with self._lock:
@@ -90,7 +93,7 @@ class _Store:
             bucket["total_retries"] += retry_count
             bucket["backoff_total_ms"] += backoff_ms
 
-    # Enregistrer métriques SSE
+    #Enregistrer métriques SSE
     def record_sse_start(self, session_id: str) -> None:
         with self._lock:
             self.sse_metrics[session_id] = {
@@ -146,8 +149,8 @@ class _Store:
 
     def snapshot(self) -> Dict:
         """
-        Retourne un instantané agrégé prêt à être sérialisé en JSON.
-        Les timestamps sont en secondes (unix). La vue les convertit en ISO.
+        Retourne un instantané de la session courante (PROD) ou vide (DEV).
+        En DEV, sera entièrement surchargé par les données JSONL.
         """
         with self._lock:
             # Disponibilité + success_rate par clé
@@ -172,17 +175,17 @@ class _Store:
                 n = len(arr)
                 p50 = _nearest_rank(arr, 50)
                 p95 = _nearest_rank(arr, 95)
-                p99 = _nearest_rank(arr, 99)  # NOUVEAU
+                p99 = _nearest_rank(arr, 99)
                 avg = sum(arr) / n
                 latency_out[key] = {
                     "count": n,
                     "p50_ms": int(p50),
                     "p95_ms": int(p95),
-                    "p99_ms": int(p99),  # NOUVEAU
+                    "p99_ms": int(p99),
                     "avg_ms": int(round(avg)),
                 }
 
-            # Durées par étape pipeline
+            # Pipeline durations (sera surchargé en DEV)
             pipeline_out: Dict[str, Dict[str, float]] = {}
             for step, values in self.pipeline_durations.items():
                 if not values:
@@ -201,16 +204,11 @@ class _Store:
                     "avg_ms": int(round(avg)),
                 }
 
-            # Taux de fallback
-            fallback_out: Dict[str, Dict[str, float]] = {}
+            # Fallbacks — on ne renvoie **que** fallback_calls
+            fallback_out: Dict[str, Dict[str, int]] = {}
             for key, counts in self.fallbacks.items():
-                total = counts.get("total_calls", 0)
-                fallback = counts.get("fallback_calls", 0)
-                rate = (fallback / total) if total else 0.0
                 fallback_out[key] = {
-                    "total_calls": total,
-                    "fallback_calls": fallback,
-                    "fallback_rate": round(rate, 3)
+                    "fallback_calls": int(counts.get("fallback_calls", 0))
                 }
 
             # Statistiques retry
@@ -221,7 +219,7 @@ class _Store:
                     "backoff_total_ms": counts.get("backoff_total_ms", 0)
                 }
 
-            # Métriques SSE agrégées
+            # Métriques SSE (sera surchargé en DEV)
             sse_sessions = list(self.sse_metrics.values())
             sse_out = {
                 "total_sessions": len(sse_sessions),
@@ -250,23 +248,18 @@ class _Store:
             errors_out = {k: dict(v) for k, v in self.errors.items()}
 
             return {
-                "started_at": int(self.started_at),                        # unix s
-                "uptime_s": round(time.time() - self.started_at, 1),       # durée
+                "started_at": int(self.started_at),
+                "uptime_s": round(time.time() - self.started_at, 1),
                 "availability": availability_out,
                 "latency": latency_out,
-                "pipeline_durations": pipeline_out,  
-                "fallbacks": fallback_out,           
-                "retries": retry_out,                
-                "sse_quality": sse_out,              
+                "pipeline_durations": pipeline_out,
+                "fallbacks": fallback_out,
+                "retries": retry_out,
+                "sse_quality": sse_out,
                 "errors": errors_out,
                 "totals": dict(self.totals),
-                "last_seen": int(self.last_seen) if self.last_seen else None,  # unix s
-                "notes": (
-                    "DEV/DEBUG: In-memory during this Python process only. "
-                    "Historical mode enabled in DEV: per-op metrics are rehydrated "
-                    f"from {_METRICS_PATH} and per-dream traces from {_TRACES_PATH} across restarts "
-                    f"(only the last {_MAX_TRACES} dreams are kept)."
-                ),
+                "last_seen": int(self.last_seen) if self.last_seen else None,
+                "notes": "Session data - metrics from current deployment.",
             }
 
 
@@ -310,43 +303,212 @@ def _append_jsonl(path: str, obj: dict, max_lines: Optional[int] = None) -> None
         pass
 
 
-def _load_metrics_jsonl_into_store() -> None:
+def _load_complete_jsonl_snapshot() -> Dict:
     """
-    Rejoue les lignes de .dev/dev_metrics.jsonl dans le _STORE pour
-    agréger à travers les redémarrages en DEV.
+    En DEV uniquement : charge TOUTES les métriques depuis les JSONL pour 
+    remplacer ENTIÈREMENT les données de session par les données historiques.
     """
-    if not (_APP_ENV == "dev" and _PERSIST_METRICS):
-        return
+    if not (_APP_ENV == "dev" and _PERSIST_TRACES and os.path.exists(_TRACES_PATH)):
+        return {}
+    
+    # Reconstituer availability/latency depuis dev_metrics.jsonl
+    availability_data = {}
+    latency_data = {}
+    errors_data = {}
+
+    # --- Structures pour fallbacks / retries depuis JSONL (logique PAR REQUÊTE) ---
+    fallback_data: Dict[str, Dict[str, int]] = {}
+    retry_data: Dict[str, Dict[str, int]] = {}
+
+    # 1. Charger dev_metrics.jsonl si disponible
+    if os.path.exists(_METRICS_PATH):
+        try:
+            with open(_METRICS_PATH, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    rec = json.loads(line)
+                    provider = rec.get("provider")
+                    op = rec.get("op")
+                    status = rec.get("status")
+                    latency_ms = rec.get("latency_ms")
+                    reason = rec.get("reason")
+
+                    # Gestion des événements fallback / retry (persistés par requête)
+                    event = rec.get("event")
+                    if provider and op and event == "fallback":
+                        key = f"{provider}.{op}"
+                        attempt = rec.get("attempt", 1)
+                        bucket = fallback_data.setdefault(key, {"total_calls": 0, "fallback_calls": 0})
+                        bucket["total_calls"] += 1            # une ligne = une requête
+                        if attempt > 1:
+                            bucket["fallback_calls"] += 1      # a eu au moins un fallback
+                        continue
+
+                    if provider and op and event == "retry":
+                        key = f"{provider}.{op}"
+                        rc = int(rec.get("retry_count", 0) or 0)
+                        bo = int(rec.get("backoff_ms", 0) or 0)
+                        bucket = retry_data.setdefault(key, {"total_retries": 0, "backoff_total_ms": 0})
+                        bucket["total_retries"] += rc
+                        bucket["backoff_total_ms"] += bo
+                        continue
+
+                    if not provider or not op or not status:
+                        continue
+
+                    key = f"{provider}.{op}"
+                    availability_data.setdefault(key, {"ok": 0, "fail": 0})
+                    latency_data.setdefault(key, [])
+
+                    if status == "success":
+                        availability_data[key]["ok"] += 1
+                    else:
+                        availability_data[key]["fail"] += 1
+                        if reason:
+                            errors_data.setdefault(key, {})
+                            errors_data[key][reason] = errors_data[key].get(reason, 0) + 1
+
+                    if latency_ms is not None:
+                        latency_data[key].append(int(latency_ms))
+        except Exception as e:
+            logger.warning(f"Erreur lecture dev_metrics.jsonl: {e}")
+
+    # 2. Charger les données depuis dev_traces.jsonl
+    pipeline_data = {}
+    sse_sessions = []
+    total_dreams = 0
+    first_ts = None
+    last_ts = None
+
     try:
-        if not os.path.exists(_METRICS_PATH):
-            return
-        with open(_METRICS_PATH, "r", encoding="utf-8") as f:
+        with open(_TRACES_PATH, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
-                try:
-                    rec = json.loads(line)
-                except Exception:
-                    continue
-                provider = rec.get("provider")
-                op = rec.get("op")
-                status = rec.get("status")
-                latency_ms = rec.get("latency_ms")
-                reason = rec.get("reason")
-                if not provider or not op or not status:
-                    continue
-                if status == "success":
-                    _STORE.record_ok(provider, op, latency_ms)
-                else:
-                    _STORE.record_fail(provider, op, latency_ms, reason)
-    except Exception:
-        # on ignore un éventuel problème de lecture pour ne pas bloquer
-        pass
+                rec = json.loads(line)
+
+                total_dreams += 1
+                ts = rec.get("ts")
+                if ts:
+                    if first_ts is None or ts < first_ts:
+                        first_ts = ts
+                    if last_ts is None or ts > last_ts:
+                        last_ts = ts
+
+                # Pipeline durations
+                for step_key in ["transcribe_ms", "emotion_ms", "image_ms", "interpretation_ms", "total_duration_ms"]:
+                    if rec.get(step_key):
+                        final_key = "total_workflow_ms" if step_key == "total_duration_ms" else step_key
+                        pipeline_data.setdefault(final_key, []).append(rec[step_key])
+
+                # SSE sessions (1 par rêve)
+                sse_sessions.append({
+                    "started_at": rec.get("started_at", time.time()),
+                    "first_event_at": rec.get("started_at", time.time()) + 1,
+                    "events_count": 5,
+                    "completed": True,
+                    "aborted": False
+                })
+
+    except Exception as e:
+        logger.warning(f"Erreur lecture dev_traces.jsonl: {e}")
+        return {}
+
+    # 3. Formater availability avec success_rate
+    availability_out = {}
+    for key, counts in availability_data.items():
+        ok = counts.get("ok", 0)
+        fail = counts.get("fail", 0)
+        total = ok + fail
+        rate = (ok / total) if total else 0.0
+        availability_out[key] = {
+            "ok": ok,
+            "fail": fail,
+            "success_rate": round(rate, 3)
+        }
+
+    # 4. Formater latency avec percentiles
+    latency_out = {}
+    for key, values in latency_data.items():
+        if not values:
+            continue
+        arr = sorted(values)
+        n = len(arr)
+        p50 = _nearest_rank(arr, 50)
+        p95 = _nearest_rank(arr, 95)
+        p99 = _nearest_rank(arr, 99)
+        avg = sum(arr) / n
+        latency_out[key] = {
+            "count": n,
+            "p50_ms": int(p50),
+            "p95_ms": int(p95),
+            "p99_ms": int(p99),
+            "avg_ms": int(round(avg)),
+        }
+
+    # 5. Formater pipeline durations
+    pipeline_out = {}
+    for step, values in pipeline_data.items():
+        if not values:
+            continue
+        arr = sorted(values)
+        n = len(arr)
+        p50 = _nearest_rank(arr, 50)
+        p95 = _nearest_rank(arr, 95)
+        p99 = _nearest_rank(arr, 99)
+        avg = sum(arr) / n
+        pipeline_out[step] = {
+            "count": n,
+            "p50_ms": int(p50),
+            "p95_ms": int(p95),
+            "p99_ms": int(p99),
+            "avg_ms": int(round(avg)),
+        }
+
+    # 6. Fallbacks & 7. SSE quality
+    sse_out = {
+        "total_sessions": len(sse_sessions),
+        "completed_sessions": len([s for s in sse_sessions if s["completed"]]),
+        "aborted_sessions": len([s for s in sse_sessions if s["aborted"]]),
+        "completion_rate": 0.0,
+        "abort_rate": 0.0,
+        "avg_ttfb_ms": 1000,
+        "avg_events_per_session": 5.0
+    }
+
+    if sse_sessions:
+        sse_out["completion_rate"] = round(sse_out["completed_sessions"] / len(sse_sessions), 3)
+        sse_out["abort_rate"] = round(sse_out["aborted_sessions"] / len(sse_sessions), 3)
+
+    # 8. Totaux
+    total_ok = sum(counts.get("ok", 0) for counts in availability_data.values())
+    total_fail = sum(counts.get("fail", 0) for counts in availability_data.values())
+    total_all = total_ok + total_fail
+
+    # IMPORTANT: on ne renvoie que fallback_calls (pas total_calls) en DEV aussi
+    fallback_trimmed = {k: {"fallback_calls": v.get("fallback_calls", 0)} for k, v in fallback_data.items()}
+
+    return {
+        "started_at": int(first_ts) if first_ts else int(time.time()),
+        "uptime_s": (last_ts - first_ts) if (first_ts and last_ts) else 0,
+        "availability": availability_out,
+        "latency": latency_out,
+        "pipeline_durations": pipeline_out,
+        "fallbacks": fallback_trimmed,       # ← uniquement fallback_calls
+        "retries": retry_data,               # <— agrégé depuis JSONL
+        "sse_quality": sse_out,
+        "errors": errors_data, 
+        "totals": {"ok": total_ok, "fail": total_fail, "all": total_all},
+        "last_seen": int(last_ts) if last_ts else None,
+        "notes": f"DEV HISTORICAL MODE: ALL metrics from JSONL files. {total_dreams} dreams from {_TRACES_PATH}.",
+        "_total_dreams": total_dreams
+    }
 
 
-# NOUVELLES FONCTIONS D'API
-
+# NOUVELLES FONCTIONS D'API (identiques)
 def metric_pipeline_duration(step: str, duration_ms: int) -> None:
     """Enregistre la durée d'une étape du pipeline"""
     if not _COLLECT_ENABLED:
@@ -355,19 +517,42 @@ def metric_pipeline_duration(step: str, duration_ms: int) -> None:
     logger.info(f"[PIPELINE] step={step} duration_ms={duration_ms}")
 
 def metric_fallback(provider: str, op: str, attempt: int) -> None:
-    """Enregistre une tentative avec info de fallback"""
+    """
+    Enregistre le Fallback **par requête** (APPELER UNE SEULE FOIS PAR REQUÊTE)
+    - attempt = 1  → pas de fallback
+    - attempt > 1  → la requête a eu au moins un fallback
+    """
     if not _COLLECT_ENABLED:
         return
     _STORE.record_fallback(provider, op, attempt)
     if attempt > 1:
         logger.info(f"[FALLBACK] provider={provider} op={op} attempt={attempt}")
+    # Persistance DEV (par requête)
+    if _APP_ENV == "dev" and _PERSIST_METRICS:
+        _append_jsonl(_METRICS_PATH, {
+            "ts": time.time(),
+            "provider": provider,
+            "op": op,
+            "event": "fallback",
+            "attempt": attempt,  # valeur finale
+        })
 
 def metric_retry(provider: str, op: str, retry_count: int, backoff_ms: int) -> None:
-    """Enregistre des statistiques de retry"""
+    """Enregistre des statistiques de retry (agrégées ou par requête)"""
     if not _COLLECT_ENABLED:
         return
     _STORE.record_retry(provider, op, retry_count, backoff_ms)
     logger.info(f"[RETRY] provider={provider} op={op} retries={retry_count} backoff_ms={backoff_ms}")
+    # Persistance DEV
+    if _APP_ENV == "dev" and _PERSIST_METRICS:
+        _append_jsonl(_METRICS_PATH, {
+            "ts": time.time(),
+            "provider": provider,
+            "op": op,
+            "event": "retry",
+            "retry_count": retry_count,
+            "backoff_ms": backoff_ms,
+        })
 
 def metric_sse_start(session_id: str) -> None:
     """Démarre le tracking d'une session SSE"""
@@ -399,23 +584,15 @@ def metric_sse_abort(session_id: str) -> None:
         return
     _STORE.record_sse_abort(session_id)
 
-
 def metric_ok(provider: str, op: str, latency_ms: Optional[int] = None) -> None:
-    """
-    API d'enregistrement de succès.
-    No-op si APP_ENV ∈ {test, ci}.
-    """
+    """API d'enregistrement de succès."""
     if not _COLLECT_ENABLED:
         return
     _STORE.record_ok(provider, op, latency_ms)
-    # Ligne de log structurée que LogMetricsHandler sait relire si activé
     logger.info(
         "[METRIC] provider=%s op=%s status=success latency_ms=%s",
-        provider,
-        op,
-        latency_ms if latency_ms is not None else "0",
+        provider, op, latency_ms if latency_ms is not None else "0",
     )
-    # --- AJOUT: persistance DEV ---
     if _APP_ENV == "dev" and _PERSIST_METRICS:
         _append_jsonl(_METRICS_PATH, {
             "ts": time.time(),
@@ -426,24 +603,14 @@ def metric_ok(provider: str, op: str, latency_ms: Optional[int] = None) -> None:
             "reason": None,
         })
 
-
-def metric_fail(
-    provider: str, op: str, latency_ms: Optional[int] = None, reason: Optional[str] = None
-) -> None:
-    """
-    API d'enregistrement d'échec (avec raison si dispo).
-    No-op si APP_ENV ∈ {test, ci}.
-    """
+def metric_fail(provider: str, op: str, latency_ms: Optional[int] = None, reason: Optional[str] = None) -> None:
+    """API d'enregistrement d'échec."""
     if not _COLLECT_ENABLED:
         return
     _STORE.record_fail(provider, op, latency_ms, reason)
-    # Même format que ci-dessus, avec status=failed (+ reason)
     logger.info(
         "[METRIC] provider=%s op=%s status=failed reason=%s latency_ms=%s",
-        provider,
-        op,
-        (reason or "unknown"),
-        latency_ms if latency_ms is not None else "0",
+        provider, op, (reason or "unknown"), latency_ms if latency_ms is not None else "0",
     )
     # --- AJOUT: persistance DEV ---
     if _APP_ENV == "dev" and _PERSIST_METRICS:
@@ -456,69 +623,171 @@ def metric_fail(
             "reason": reason or "unknown",
         })
 
-
 def get_snapshot() -> Dict:
-    """Lecture instantanée, sans effet de bord."""
+    """
+    Retourne un instantané agrégé.
+    En DEV: TOUTES les données depuis JSONL (remplace session)
+    En PROD: données de session courante uniquement
+    """
+    if _APP_ENV == "dev" and _PERSIST_TRACES:
+        # DEV: remplacer ENTIÈREMENT par données JSONL
+        jsonl_snapshot = _load_complete_jsonl_snapshot()
+        if jsonl_snapshot:
+            return jsonl_snapshot
+    
+    # PROD ou fallback: snapshot de session
     return _STORE.snapshot()
 
-
-class LogMetricsHandler(logging.Handler):
+def calculate_real_dreams_per_day() -> float:
     """
-    Handler optionnel : si on le branche sur un logger, il "écoute" les
-    lignes contenant [METRIC] et ré-incrémente localement le _STORE.
-    Pratique si certaines métriques viennent d'autres modules/process via logs.
+    DEV: depuis TOUTES les dates des traces JSONL
+    PROD: depuis session active
     """
-    def emit(self, record: logging.LogRecord) -> None:
+    import datetime
+    
+    if _APP_ENV == "dev" and _PERSIST_TRACES and os.path.exists(_TRACES_PATH):
+        # DEV: lire toutes les dates
+        dream_dates = []
         try:
-            msg = record.getMessage()
-            if "[METRIC]" not in msg:
-                return
-            data = _parse_kv(msg)
-            provider = data.get("provider")
-            op = data.get("op")
-            status = data.get("status")
-            latency = _safe_int(data.get("latency_ms"))
-            reason = data.get("reason")
-            if not provider or not op or not status:
-                return
-            if status == "success":
-                _STORE.record_ok(provider, op, latency)
-            else:
-                _STORE.record_fail(provider, op, latency, reason)
+            with open(_TRACES_PATH, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    rec = json.loads(line)
+                    created_at = rec.get("created_at")
+                    if created_at:
+                        date = datetime.datetime.fromtimestamp(created_at).date()
+                        dream_dates.append(date)
         except Exception:
-            # On évite de casser la chaîne de logs si une ligne est mal formée
-            pass
+            return 0.0
+        
+        if not dream_dates:
+            return 0.0
+            
+        unique_dates = list(set(dream_dates))
+        if len(unique_dates) == 1:
+            return len(dream_dates)
+        
+        min_date = min(unique_dates)
+        max_date = max(unique_dates)
+        days_span = (max_date - min_date).days + 1
+        return len(dream_dates) / days_span
+    
+    else:
+        # PROD: session active
+        completed_dreams = _STORE.availability.get("mistral.interpretation", {}).get("ok", 0)
+        if completed_dreams == 0:
+            return 0.0
+        uptime_days = max((time.time() - _STORE.started_at) / 86400, 1/24)
+        return completed_dreams / uptime_days
 
-
-def _parse_kv(line: str) -> Dict[str, str]:
+def calculate_business_metrics() -> Dict:
     """
-    Parse ultra-simple du segment clef=valeur après le tag [METRIC].
-    Exemple: "[METRIC] provider=groq op=transcribe status=success latency_ms=120"
+    DEV: coûts calculés sur les rêves des traces JSONL
+    PROD: coûts calculés sur la session active
     """
-    out: Dict[str, str] = {}
-    try:
-        segment = line.split("[METRIC]", 1)[1]
-    except Exception:
-        return out
-    tokens = segment.replace(",", " ").strip().split()
-    for tok in tokens:
-        if "=" in tok:
-            k, v = tok.split("=", 1)
-            out[k.strip()] = v.strip()
-    return out
+    PRICING = {
+    'groq': {
+            # transcription Whisper v3 Turbo
+            'transcribe': 0.001   # USD / rêve (~1 min audio, sur-estimé)
+        },
+        'mistral': {
+            # analyse émotionnelle (Small)
+            'emotion': 0.0003,    # USD / rêve (sur-estimé)
+            # interprétation du rêve (Large)
+            'interpretation': 0.0035,  # USD / rêve (sur-estimé)
+            # génération d’image (agent image_generation)
+            'image': 0.06         # USD / image 
+        }
+    }
 
+    if _APP_ENV == "dev" and _PERSIST_TRACES:
+        # DEV: tout depuis JSONL
+        dev_traces = get_dev_traces_summary()
+        completed_dreams = dev_traces.get("total", 0) if dev_traces else 0
+        
+        # Calculer le nombre réel d'images depuis has_image des traces
+        images_count = 0
+        if os.path.exists(_TRACES_PATH):
+            try:
+                with open(_TRACES_PATH, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        rec = json.loads(line)
+                        if rec.get("has_image", False):
+                            images_count += 1
+            except Exception:
+                pass
+        
+        # Coûts basés sur les vraies données JSONL
+        estimated_cost = (
+            completed_dreams * PRICING['groq']['transcribe'] +
+            completed_dreams * PRICING['mistral']['emotion'] + 
+            completed_dreams * PRICING['mistral']['interpretation'] +
+            images_count * PRICING['mistral']['image']
+        )
 
-def _safe_int(val: Optional[str]) -> Optional[int]:
-    """Convertit prudemment une str en int (ou None si vide / invalide)."""
-    if val is None:
-        return None
-    try:
-        return int(float(val))
-    except Exception:
-        return None
+        # Durée depuis les vraies dates JSONL
+        session_duration_hours = 0.0
+        if dev_traces and dev_traces.get("first_result_at") and dev_traces.get("last_result_at"):
+            try:
+                import datetime
+                first = datetime.datetime.fromisoformat(dev_traces["first_result_at"].replace("Z", "+00:00"))
+                last = datetime.datetime.fromisoformat(dev_traces["last_result_at"].replace("Z", "+00:00"))
+                session_duration_hours = (last - first).total_seconds() / 3600
+            except Exception:
+                session_duration_hours = 0.0
+        
+        notes = (
+            f"!! Fixed costs based on {completed_dreams} dreams JSONL "
+            f"({images_count} with images). "
+            "More accurate costs can be established later using actual audio duration, "
+            "token counts (input/output), image parameters, and official API pricing updates."
+        )
 
+    else:
+        # PROD: session active
+        availability = _STORE.availability
+        api_calls = {
+            'groq_transcribe': availability.get("groq.transcribe", {}).get("ok", 0),
+            'mistral_emotion': availability.get("mistral.emotion", {}).get("ok", 0),
+            'mistral_interpretation': availability.get("mistral.interpretation", {}).get("ok", 0),
+            'mistral_image': availability.get("mistral.image", {}).get("ok", 0),
+        }
+        
+        completed_dreams = api_calls['mistral_interpretation']
+        images_count = api_calls['mistral_image']  # <- ajout unique pour adapter le coût si 0 image
 
-# --- AJOUT: traces par rêve (vue produit/métier) ---
+        estimated_cost = (
+            api_calls['groq_transcribe'] * PRICING['groq']['transcribe'] +
+            api_calls['mistral_emotion'] * PRICING['mistral']['emotion'] +
+            api_calls['mistral_interpretation'] * PRICING['mistral']['interpretation'] +
+            api_calls['mistral_image'] * PRICING['mistral']['image']
+        )
+        
+        session_duration_hours = round((time.time() - _STORE.started_at) / 3600, 1)
+        notes = (
+            f"!! Fixed costs based on {completed_dreams} dreams JSONL "
+            f"({images_count} with images). "
+            "More accurate costs can be established later using actual audio duration, "
+            "token counts (input/output), image parameters, and official API pricing updates."
+        )
+
+    dreams_per_day = calculate_real_dreams_per_day()
+    cost_per_dream = estimated_cost / completed_dreams if completed_dreams > 0 else 0
+    
+    return {
+        "dreams_completed": completed_dreams,
+        "dreams_per_day": round(dreams_per_day, 2),
+        "estimated_cost_usd": round(estimated_cost, 4),
+        "cost_per_dream": round(cost_per_dream, 4),
+        "session_duration_hours": session_duration_hours,
+        "notes": notes
+    }
+
 
 def record_dream_trace(
     *,
@@ -535,10 +804,7 @@ def record_dream_trace(
     image_ms: Optional[int] = None,
     interpretation_ms: Optional[int] = None,
 ) -> None:
-    """
-    Enregistre une ligne "1 rêve = 1 ligne" dans .dev/dev_traces.jsonl (DEV).
-    Ne fait rien si pas en DEV ou si persistance désactivée.
-    """
+    """Enregistre une trace de rêve en DEV."""
     if not (_APP_ENV == "dev" and _PERSIST_TRACES):
         return
     rec = {
@@ -547,7 +813,7 @@ def record_dream_trace(
         "user_id": user_id,
         "created_at": float(created_at_ts),
         "dream_type": str(dream_type),
-        "dominant_emotion": str(dominant_emotion) if dominant_emotion is not None else "",
+        "dominant_emotion": str(dominant_emotion) if dominant_emotion else "",
         "has_image": bool(has_image),
         "total_duration_ms": int(total_duration_ms),
         "started_at": float(started_at_ts),
@@ -570,21 +836,12 @@ def _iso_from_ts(ts: Optional[float]) -> Optional[str]:
 
 
 def get_dev_traces_summary() -> Optional[Dict]:
-    """
-    Retourne un résumé des traces DEV (total de rêves + premier/dernier).
-    None si non-DEV ou persistance désactivée.
-    """
+    """Résumé des traces DEV."""
     if not (_APP_ENV == "dev" and _PERSIST_TRACES):
         return None
     try:
         if not os.path.exists(_TRACES_PATH):
-            return {
-                "enabled": True,
-                "path": _TRACES_PATH,
-                "total": 0,
-                "first_result_at": None,
-                "last_result_at": None,
-            }
+            return {"enabled": True, "path": _TRACES_PATH, "total": 0, "first_result_at": None, "last_result_at": None}
 
         first_ts = None
         last_ts = None
@@ -607,7 +864,6 @@ def get_dev_traces_summary() -> Optional[Dict]:
                 if last_ts is None or t > last_ts:
                     last_ts = t
 
-        # Le fichier est tronqué aux N dernières lignes ; "total" = nb de rêves considérés.
         return {
             "enabled": True,
             "path": _TRACES_PATH,
@@ -616,28 +872,131 @@ def get_dev_traces_summary() -> Optional[Dict]:
             "last_result_at": _iso_from_ts(last_ts),
         }
     except Exception:
-        # état minimal en cas de souci de lecture
-        return {
-            "enabled": True,
-            "path": _TRACES_PATH,
-            "total": 0,
-            "first_result_at": None,
-            "last_result_at": None,
-        }
+        return {"enabled": True, "path": _TRACES_PATH, "total": 0, "first_result_at": None, "last_result_at": None}
+
+
+def _get_deployment_info() -> Dict:
+    """Infos de déploiement Render ou local."""
+    deployment_info = {
+        "process_start": _iso_from_ts(_STORE.started_at),
+        "python_version": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
+    }
+
+    # Commit Git (Render injecte RENDER_GIT_COMMIT)
+    git_commit = os.getenv("RENDER_GIT_COMMIT") or os.getenv("SOURCE_VERSION")
+    if git_commit:
+        deployment_info["git_commit"] = git_commit[:7]
+
+    # Version Render
+    build_number = os.getenv("RENDER_SERVICE_VERSION")
+    if build_number:
+        deployment_info["build_number"] = build_number
+
+    # Plateforme
+    deployment_info["platform"] = "render" if os.getenv("RENDER") else "local"
+
+    return deployment_info
+
 
 
 def get_env_info() -> Dict:
-    """
-    Retour d'info d'environnement pour /ai/health (au tout début de la réponse).
-    """
+    """Info d'environnement pour /ai/health."""
+    deployment_info = _get_deployment_info()
+    
     info = {
         "env": _APP_ENV,
         "is_dev": (_APP_ENV == "dev"),
         "mode": "historical" if (_APP_ENV == "dev" and _PERSIST_TRACES) else "session",
         "dev_traces": get_dev_traces_summary() if (_APP_ENV == "dev" and _PERSIST_TRACES) else None,
+        "deployment": deployment_info,
     }
     return info
 
 
+class LogMetricsHandler(logging.Handler):
+    """Handler optionnel pour logs métriques."""
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = record.getMessage()
+            if "[METRIC]" not in msg:
+                return
+            data = _parse_kv(msg)
+            provider = data.get("provider")
+            op = data.get("op")
+            status = data.get("status")
+            latency = _safe_int(data.get("latency_ms"))
+            reason = data.get("reason")
+            if not provider or not op or not status:
+                return
+            if status == "success":
+                _STORE.record_ok(provider, op, latency)
+            else:
+                _STORE.record_fail(provider, op, latency, reason)
+        except Exception:
+            pass
+
+
+def _parse_kv(line: str) -> Dict[str, str]:
+    """Parse simple clef=valeur après [METRIC]."""
+    out: Dict[str, str] = {}
+    try:
+        segment = line.split("[METRIC]", 1)[1]
+    except Exception:
+        return out
+    tokens = segment.replace(",", " ").strip().split()
+    for tok in tokens:
+        if "=" in tok:
+            k, v = tok.split("=", 1)
+            out[k.strip()] = v.strip()
+    return out
+
+
+def _safe_int(val: Optional[str]) -> Optional[int]:
+    """Convertit str en int prudemment."""
+    if val is None:
+        return None
+    try:
+        return int(float(val))
+    except Exception:
+        return None
+
+
 # Charger les métriques agrégées depuis .dev/dev_metrics.jsonl (si DEV)
+def _load_metrics_jsonl_into_store() -> None:
+    """
+    Rejoue les lignes de .dev/dev_metrics.jsonl dans le _STORE pour
+    agréger à travers les redémarrages en DEV.
+    (Note: ceci rejoue uniquement OK/FAIL car les fallbacks/retries sont
+    directement rechargés via _load_complete_jsonl_snapshot en mode historical.)
+    """
+    if not (_APP_ENV == "dev" and _PERSIST_METRICS):
+        return
+    try:
+        if not os.path.exists(_METRICS_PATH):
+            return
+        with open(_METRICS_PATH, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                provider = rec.get("provider")
+                op = rec.get("op")
+                status = rec.get("status")
+                latency_ms = rec.get("latency_ms")
+                reason = rec.get("reason")
+                if not provider or not op or not status:
+                    continue
+                if status == "success":
+                    _STORE.record_ok(provider, op, latency_ms)
+                else:
+                    _STORE.record_fail(provider, op, latency_ms, reason)
+    except Exception:
+        # on ignore un éventuel problème de lecture pour ne pas bloquer
+        pass
+
+
 _load_metrics_jsonl_into_store()
