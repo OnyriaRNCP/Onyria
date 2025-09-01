@@ -44,7 +44,7 @@ class _Store:
         self.latency: Dict[str, List[int]] = {}            # latences en ms
         self.errors: Dict[str, Dict[str, int]] = {}        # raisons d'échec
         
-        # NOUVEAUX: Métriques avancées
+        #Métriques avancées
         self.fallbacks: Dict[str, Dict[str, int]] = {}     # compteurs fallback
         self.retries: Dict[str, Dict[str, int]] = {}       # compteurs retry
         self.sse_metrics: Dict[str, Dict] = {}             # métriques SSE
@@ -656,10 +656,20 @@ def calculate_business_metrics() -> Dict:
     PROD: coûts calculés sur la session active
     """
     PRICING = {
-        'groq': {'transcribe': 0.00025},
-        'mistral': {'emotion': 0.002, 'interpretation': 0.007, 'image': 0.04}
+    'groq': {
+            # transcription Whisper v3 Turbo
+            'transcribe': 0.001   # USD / rêve (~1 min audio, sur-estimé)
+        },
+        'mistral': {
+            # analyse émotionnelle (Small)
+            'emotion': 0.0003,    # USD / rêve (sur-estimé)
+            # interprétation du rêve (Large)
+            'interpretation': 0.0035,  # USD / rêve (sur-estimé)
+            # génération d’image (agent image_generation)
+            'image': 0.06         # USD / image 
+        }
     }
-    
+
     if _APP_ENV == "dev" and _PERSIST_TRACES:
         # DEV: tout depuis JSONL
         dev_traces = get_dev_traces_summary()
@@ -706,7 +716,7 @@ def calculate_business_metrics() -> Dict:
             except Exception:
                 session_duration_hours = 0.0
         
-        notes = f"DEV: Coûts basés sur {completed_dreams} rêves JSONL ({images_count} avec images). Période: {session_duration_hours:.1f}h."
+        notes = f"DEV: Coûts fixes basés sur {completed_dreams} rêves JSONL ({images_count} avec images). Période: {session_duration_hours:.1f}h."
         
     else:
         # PROD: session active
@@ -728,7 +738,7 @@ def calculate_business_metrics() -> Dict:
         )
         
         session_duration_hours = round((time.time() - _STORE.started_at) / 3600, 1)
-        notes = f"PROD: Coûts réels session active. {completed_dreams} rêves depuis déploiement."
+        notes = f"PROD: Coûts fixes par session active. {completed_dreams} rêves depuis déploiement. Période: {session_duration_hours:.1f}h."
     
     dreams_per_day = calculate_real_dreams_per_day()
     cost_per_dream = estimated_cost / completed_dreams if completed_dreams > 0 else 0
