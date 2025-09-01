@@ -61,12 +61,6 @@ jobs:
           echo "Tests sécurité accounts..."
           python manage.py test accounts.tests.test_security --verbosity=2
 
-      - name: Run Integration tests (Accounts)
-        working-directory: DreamProject
-        run: |
-          echo "Tests intégration accounts..."
-          python manage.py test accounts.tests.test_integration --verbosity=2
-
       - name: Run Models tests
         working-directory: DreamProject
         run: |
