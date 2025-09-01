@@ -713,13 +713,6 @@ def calculate_business_metrics() -> Dict:
             images_count * PRICING['mistral']['image']
         )
         
-        api_calls = {
-            'groq_transcribe': completed_dreams,
-            'mistral_emotion': completed_dreams, 
-            'mistral_interpretation': completed_dreams,
-            'mistral_image': images_count  # Vrai nombre d'images
-        }
-        
         # Durée depuis les vraies dates JSONL
         session_duration_hours = 0.0
         if dev_traces and dev_traces.get("first_result_at") and dev_traces.get("last_result_at"):
@@ -774,7 +767,6 @@ def calculate_business_metrics() -> Dict:
         "dreams_per_day": round(dreams_per_day, 2),
         "estimated_cost_usd": round(estimated_cost, 4),
         "cost_per_dream": round(cost_per_dream, 4),
-        "api_calls_breakdown": api_calls,
         "session_duration_hours": session_duration_hours,
         "notes": notes
     }
