@@ -3,13 +3,7 @@ from .test_core import *
 from .test_models import *
 from .test_forms import *
 from .test_views import *
-from .test_integration import *
 from .test_security import *
-
-# Configuration des tests
-import django
-from django.test import TestCase
-from django.test.utils import override_settings
 
 # Métadonnées du package de tests
 __version__ = "1.0.0"
