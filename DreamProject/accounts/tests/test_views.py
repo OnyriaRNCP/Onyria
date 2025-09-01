@@ -14,12 +14,11 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from diary.models import Dream
 from unittest.mock import patch
 import time
 import os
 from datetime import date
-
-from ..models import Dream
 
 User = get_user_model()
 
