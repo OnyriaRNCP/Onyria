@@ -117,13 +117,15 @@ class _Store:
     def record_sse_complete(self, session_id: str) -> None:
         with self._lock:
             if session_id in self.sse_metrics:
-                self.sse_metrics[session_id]["completed"] = True
+                if not self.sse_metrics[session_id].get("aborted", False):
+                    self.sse_metrics[session_id]["completed"] = True
 
     def record_sse_abort(self, session_id: str) -> None:
         with self._lock:
             if session_id in self.sse_metrics:
-                self.sse_metrics[session_id]["aborted"] = True
-
+                if not self.sse_metrics[session_id].get("completed", False):
+                    self.sse_metrics[session_id]["aborted"] = True
+                    
     def record_ok(self, provider: str, op: str, latency_ms: Optional[int]) -> None:
         # Incrémente les compteurs de succès (section critique protégée)
         key = self._key(provider, op)
@@ -683,110 +685,102 @@ def calculate_real_dreams_per_day() -> float:
         return completed_dreams / uptime_days
 
 def calculate_business_metrics() -> Dict:
-    """
-    DEV: coûts calculés sur les rêves des traces JSONL
-    PROD: coûts calculés sur la session active
-    """
-    PRICING = {
-    'groq': {
-            # transcription Whisper v3 Turbo
-            'transcribe': 0.001   # USD / rêve (~1 min audio, sur-estimé)
-        },
-        'mistral': {
-            # analyse émotionnelle (Small)
-            'emotion': 0.0003,    # USD / rêve (sur-estimé)
-            # interprétation du rêve (Large)
-            'interpretation': 0.0035,  # USD / rêve (sur-estimé)
-            # génération d’image (agent image_generation)
-            'image': 0.06         # USD / image 
-        }
-    }
+   """
+   Calcul unifié des métriques business (DEV et PROD utilisent la même logique)
+   """
+   PRICING = {
+       'groq': {
+           # transcription Whisper v3 Turbo
+           'transcribe': 0.001   # USD / rêve (~1 min audio, sur-estimé)
+       },
+       'mistral': {
+           # analyse émotionnelle (Small)
+           'emotion': 0.0003,    # USD / rêve (sur-estimé)
+           # interprétation du rêve (Large)
+           'interpretation': 0.0035,  # USD / rêve (sur-estimé)
+           # génération d'image (agent image_generation)
+           'image': 0.06         # USD / image 
+       }
+   }
 
-    if _APP_ENV == "dev" and _PERSIST_TRACES:
-        # DEV: tout depuis JSONL
-        dev_traces = get_dev_traces_summary()
-        completed_dreams = dev_traces.get("total", 0) if dev_traces else 0
-        
-        # Calculer le nombre réel d'images depuis has_image des traces
-        images_count = 0
-        if os.path.exists(_TRACES_PATH):
-            try:
-                with open(_TRACES_PATH, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        rec = json.loads(line)
-                        if rec.get("has_image", False):
-                            images_count += 1
-            except Exception:
-                pass
-        
-        # Coûts basés sur les vraies données JSONL
-        estimated_cost = (
-            completed_dreams * PRICING['groq']['transcribe'] +
-            completed_dreams * PRICING['mistral']['emotion'] + 
-            completed_dreams * PRICING['mistral']['interpretation'] +
-            images_count * PRICING['mistral']['image']
-        )
+   # 1. Récupérer le nombre de rêves complétés
+   if _APP_ENV == "dev" and _PERSIST_TRACES:
+       # DEV: depuis JSONL
+       dev_traces = get_dev_traces_summary()
+       completed_dreams = dev_traces.get("total", 0) if dev_traces else 0
+       data_source = "JSONL traces"
+   else:
+       # PROD: depuis session active
+       completed_dreams = _STORE.availability.get("mistral.interpretation", {}).get("ok", 0)
+       data_source = "session metrics"
 
-        # Durée depuis les vraies dates JSONL
-        session_duration_hours = 0.0
-        if dev_traces and dev_traces.get("first_result_at") and dev_traces.get("last_result_at"):
-            try:
-                import datetime
-                first = datetime.datetime.fromisoformat(dev_traces["first_result_at"].replace("Z", "+00:00"))
-                last = datetime.datetime.fromisoformat(dev_traces["last_result_at"].replace("Z", "+00:00"))
-                session_duration_hours = (last - first).total_seconds() / 3600
-            except Exception:
-                session_duration_hours = 0.0
-        
-        notes = (
-            f"!! Fixed costs based on {completed_dreams} dreams JSONL "
-            f"({images_count} with images). "
-            "More accurate costs can be established later using actual audio duration, "
-            "token counts (input/output), image parameters, and official API pricing updates."
-        )
+   # 2. Récupérer le nombre réel d'images
+   images_count = 0
+   
+   if _APP_ENV == "dev" and _PERSIST_TRACES and os.path.exists(_TRACES_PATH):
+       # DEV: compter has_image=true dans les traces
+       try:
+           with open(_TRACES_PATH, "r", encoding="utf-8") as f:
+               for line in f:
+                   line = line.strip()
+                   if not line:
+                       continue
+                   rec = json.loads(line)
+                   if rec.get("has_image", False):
+                       images_count += 1
+       except Exception:
+           pass
+   else:
+       # PROD: utiliser les appels API réussis d'images
+       images_count = _STORE.availability.get("mistral.image", {}).get("ok", 0)
 
-    else:
-        # PROD: session active
-        availability = _STORE.availability
-        api_calls = {
-            'groq_transcribe': availability.get("groq.transcribe", {}).get("ok", 0),
-            'mistral_emotion': availability.get("mistral.emotion", {}).get("ok", 0),
-            'mistral_interpretation': availability.get("mistral.interpretation", {}).get("ok", 0),
-            'mistral_image': availability.get("mistral.image", {}).get("ok", 0),
-        }
-        
-        completed_dreams = api_calls['mistral_interpretation']
-        images_count = api_calls['mistral_image']  # <- ajout unique pour adapter le coût si 0 image
+   # 3. Calculer les coûts (même logique pour DEV et PROD)
+   estimated_cost = (
+       completed_dreams * PRICING['groq']['transcribe'] +
+       completed_dreams * PRICING['mistral']['emotion'] + 
+       completed_dreams * PRICING['mistral']['interpretation'] +
+       images_count * PRICING['mistral']['image']
+   )
 
-        estimated_cost = (
-            api_calls['groq_transcribe'] * PRICING['groq']['transcribe'] +
-            api_calls['mistral_emotion'] * PRICING['mistral']['emotion'] +
-            api_calls['mistral_interpretation'] * PRICING['mistral']['interpretation'] +
-            api_calls['mistral_image'] * PRICING['mistral']['image']
-        )
-        
-        session_duration_hours = round((time.time() - _STORE.started_at) / 3600, 1)
-        notes = (
-            f"!! Fixed costs based on {completed_dreams} dreams JSONL "
-            f"({images_count} with images). "
-            "More accurate costs can be established later using actual audio duration, "
-            "token counts (input/output), image parameters, and official API pricing updates."
-        )
+   # 4. Calculer la durée de session
+   session_duration_hours = 0.0
+   
+   if _APP_ENV == "dev" and _PERSIST_TRACES:
+       # DEV: depuis les vraies dates JSONL
+       dev_traces = get_dev_traces_summary()
+       if dev_traces and dev_traces.get("first_result_at") and dev_traces.get("last_result_at"):
+           try:
+               import datetime
+               first = datetime.datetime.fromisoformat(dev_traces["first_result_at"].replace("Z", "+00:00"))
+               last = datetime.datetime.fromisoformat(dev_traces["last_result_at"].replace("Z", "+00:00"))
+               session_duration_hours = round((last - first).total_seconds() / 3600, 1)
+           except Exception:
+               session_duration_hours = 0.0
+   else:
+       # PROD: depuis le démarrage du processus
+       session_duration_hours = round((time.time() - _STORE.started_at) / 3600, 1)
 
-    dreams_per_day = calculate_real_dreams_per_day()
-    cost_per_dream = estimated_cost / completed_dreams if completed_dreams > 0 else 0
-    
-    return {
-        "dreams_completed": completed_dreams,
-        "dreams_per_day": round(dreams_per_day, 2),
-        "estimated_cost_usd": round(estimated_cost, 4),
-        "cost_per_dream": round(cost_per_dream, 4),
-        "session_duration_hours": session_duration_hours,
-        "notes": notes
-    }
+   # 5. Calculer dreams_per_day et cost_per_dream
+   dreams_per_day = calculate_real_dreams_per_day()
+   cost_per_dream = estimated_cost / completed_dreams if completed_dreams > 0 else 0
+   
+   # 6. Notes cohérentes avec la source des données
+   notes = (
+       f"Costs based on {completed_dreams} completed dreams "
+       f"({images_count} with images) from {data_source}. "
+       "Estimates use fixed rates per operation. "
+       "More accurate costs require actual audio duration, "
+       "token counts (input/output), image parameters, and current API pricing."
+   )
+
+   return {
+       "dreams_completed": completed_dreams,
+       "dreams_per_day": round(dreams_per_day, 2),
+       "estimated_cost_usd": round(estimated_cost, 4),
+       "cost_per_dream": round(cost_per_dream, 4),
+       "session_duration_hours": session_duration_hours,
+       "notes": notes
+   }
 
 
 def record_dream_trace(
