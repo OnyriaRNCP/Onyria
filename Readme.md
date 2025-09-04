@@ -36,7 +36,7 @@ Le projet utilise des variables d'environnement pour la configuration. Créer un
 SECRET_KEY=your-secret-key-here
 DEBUG=True
 ALLOWED_HOSTS=localhost,127.0.0.1
-APP_ENV=development
+APP_ENV=dev
 
 # Base de données
 DATABASE_URL=sqlite:///db.sqlite3
