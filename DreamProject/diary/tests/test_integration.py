@@ -23,7 +23,6 @@ from ..models import Dream
 from ..utils import get_profil_onirique_stats, analyze_recurring_themes
 from ._helpers_sse import (
     sse_to_flat_payload as _sse_to_flat_payload,
-    read_sse_events as _read_sse_events,
 )
 
 User = get_user_model()
