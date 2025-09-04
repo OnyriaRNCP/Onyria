@@ -1,41 +1,36 @@
 name: Tests à chaque push
 
 on:
-  push:
+ push:
 
 env:
-  PYTHON_VERSION: '3.11'
+ PYTHON_VERSION: '3.11'
 
 jobs:
-  # Tests core
-  daily_tests:
-    name: "Tests des fonctionnalités principales et tests de sécurité"
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        cache: 'pip'
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install black
-    
-    - name: Run Black (check format)
-      run: |
-        black .
-    
-    - name: Run core tests (< 15 sec)
-      run: |
-        python DreamProject/manage.py test diary.tests.test_core --verbosity=1 --parallel --keepdb
-        python DreamProject/manage.py test diary.tests.test_security --verbosity=1 --parallel
-      env:
-        GROQ_API_KEY: 'fake-key-for-ci'
-        MISTRAL_API_KEY: 'fake-key-for-ci'
+ daily_tests:
+   name: "Tests des fonctionnalités principales"
+   runs-on: ubuntu-latest
+   
+   steps:
+   - name: Checkout code
+     uses: actions/checkout@v4
+   
+   - name: Set up Python
+     uses: actions/setup-python@v5
+     with:
+       python-version: ${{ env.PYTHON_VERSION }}
+       cache: 'pip'
+   
+   - name: Install dependencies
+     run: |
+       python -m pip install --upgrade pip
+       pip install -r requirements.txt
+       pip install black
+   
+   - name: Format code with Black
+     run: black .
+   
+   - name: Run core tests
+     run: |
+       cd DreamProject
+       python manage.py test diary.tests.test_core diary.tests.test_security --verbosity=1 --parallel --keepdb

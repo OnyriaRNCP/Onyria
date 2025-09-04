@@ -154,6 +154,59 @@
   </div>
 </div>
 
+<!-- Section 3: Thématiques récurrentes - À ajouter après la section émotions -->
+<div class="mb-8">
+  <h2 class="text-2xl font-semibold text-gray-800 mb-6 text-center">
+    Thématiques récurrentes
+  </h2>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Graphique répartition thématiques -->
+    <div class="pastel-vanilla">
+      <h3 class="text-sm sm:text-base md:text-lg font-semibold mb-4 text-center">
+        Répartition des thèmes
+      </h3>
+      <div class="h-64 flex items-center justify-center">
+        {% if themes_stats.has_data %}
+          <canvas id="themesPieChart" class="max-w-full max-h-full"></canvas>
+        {% else %}
+          <div class="text-center text-gray-500">
+            <p class="text-sm">Pas assez de données</p>
+            <p class="text-xs mt-1">Au moins 2 rêves nécessaires</p>
+          </div>
+        {% endif %}
+      </div>
+      <div class="mt-4 text-xs sm:text-sm text-gray-600 text-center">
+        {% if themes_stats.has_data %}
+          {{ themes_stats.total_dreams }} rêve{{ themes_stats.total_dreams|pluralize }} analysé{{ themes_stats.total_dreams|pluralize }}
+        {% else %}
+          Thématiques en attente d'analyse
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Graphique évolution temporelle thématiques -->
+    <div class="pastel-baby-powder">
+      <h3 class="text-sm sm:text-base md:text-lg font-semibold mb-4 text-center">
+        Évolution des thèmes
+      </h3>
+      <div class="h-64 flex items-center justify-center">
+        {% if themes_timeline %}
+          <canvas id="themesTimelineChart" class="max-w-full max-h-full"></canvas>
+        {% else %}
+          <div class="text-center text-gray-500">
+            <p class="text-sm">Données insuffisantes</p>
+            <p class="text-xs mt-1">Plus de rêves nécessaires pour la timeline</p>
+          </div>
+        {% endif %}
+      </div>
+      <div class="mt-4 text-xs sm:text-sm text-gray-600 text-center">
+        Tendances thématiques dans le temps
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Avertissement -->
 <div class="mt-8">
   <details class="ai-disclaimer">
@@ -184,7 +237,7 @@
 {% else %}
 
 <!-- Message si pas de données -->
-<div class="text-center py-12">
+<div class="text-center ">
   <div class="pastel-baby-powder max-w-md mx-auto">
     <h3 class="text-lg sm:text-xl font-semibold mb-4">
       {% if current_period != 'all' %}
@@ -540,14 +593,14 @@ document.addEventListener('DOMContentLoaded', function() {
       endInput.classList.remove('error');
       
       if (!startDate || !endDate) {
-        showNotification('⚠️ Veuillez sélectionner une date de début et une date de fin.', 'warning');
+        showNotification('Veuillez sélectionner une date de début et une date de fin.', 'warning');
         if (!startDate) startInput.classList.add('error');
         if (!endDate) endInput.classList.add('error');
         return;
       }
       
       if (new Date(startDate) > new Date(endDate)) {
-        showNotification('⚠️ La date de début doit être antérieure à la date de fin.', 'error');
+        showNotification('La date de début doit être antérieure à la date de fin.', 'error');
         startInput.classList.add('error');
         endInput.classList.add('error');
         return;
@@ -556,12 +609,12 @@ document.addEventListener('DOMContentLoaded', function() {
       // Vérifier que les dates ne sont pas dans le futur
       const today = new Date();
       if (new Date(endDate) > today) {
-        showNotification('⚠️ La date de fin ne peut pas être dans le futur.', 'warning');
+        showNotification('La date de fin ne peut pas être dans le futur.', 'warning');
         endInput.classList.add('error');
         return;
       }
       
-      showNotification('✅ Filtre appliqué avec succès !', 'success');
+      showNotification('Filtre appliqué avec succès !', 'success');
       applyCustomFilter(startDate, endDate);
     });
   }
@@ -675,11 +728,16 @@ function applyCustomFilter(startDate, endDate) {
 {% if has_data %}
 // Configuration des couleurs pour cohérence visuelle avec contraste amélioré
 const colors = {
-  reve: '#4e3f86',      // Votre couleur brand principale pour les rêves
-  cauchemar: '#E6C98C',  // Couleur pastel-yellow plus foncée pour les cauchemars
+  reve: '#4e3f86',
+  cauchemar: '#E6C98C',  
   emotions: [
     '#4e3f86', '#E6C98C', '#D8D3C3', '#c7a96b',
     '#9a8472', '#b5a491', '#8b7355', '#a69684'
+  ],
+  themes: [
+    '#4e3f86', '#E6C98C', '#D8D3C3', '#c7a96b', '#9a8472', 
+    '#b5a491', '#8b7355', '#a69684', '#7d6e5f', '#958c7a',
+    '#6f665a', '#8a7f73', '#b2a895', '#9c9187', '#7a7067'
   ]
 };
 
@@ -689,6 +747,20 @@ const dreamTypeTimeline = {{ dream_type_timeline|safe }};
 const emotionsStats = {{ emotions_stats|safe }};
 const emotionsTimeline = {{ emotions_timeline|safe }};
 const emotionsList = {{ emotions_list|safe }};
+
+// DEBUG DES DONNÉES THÉMATIQUES
+console.log('=== DEBUG THEMES TIMELINE ===');
+console.log('themes_timeline depuis Django:', {{ themes_timeline|safe }});
+console.log('themes_list depuis Django:', {{ themes_list|safe }});
+
+// Variables pour éviter les erreurs de référence
+const debugThemesTimeline = {{ themes_timeline|safe }};
+const debugThemesList = {{ themes_list|safe }};
+
+console.log('debugThemesTimeline:', debugThemesTimeline);
+console.log('debugThemesList:', debugThemesList);
+console.log('debugThemesTimeline.length:', debugThemesTimeline.length);
+console.log('debugThemesList.length:', debugThemesList.length);
 
 // Configuration Chart.js par défaut
 Chart.defaults.font.family = "'Schibsted Grotesk', sans-serif";
@@ -963,6 +1035,217 @@ if (emotionsTimeline.length > 0 && emotionsList.length > 0) {
       }
     }
   });
+}
+
+{% if themes_stats.has_data %}
+// 5. Graphique en secteurs - Thématiques
+const ctxThemes = document.getElementById('themesPieChart').getContext('2d');
+const themesData = {{ themes_stats.themes|safe }};
+const themeLabels = Object.keys(themesData);
+const themePercentages = themeLabels.map(theme => themesData[theme].percentage);
+
+new Chart(ctxThemes, {
+  type: 'pie',
+  data: {
+    labels: themeLabels,
+    datasets: [{
+      data: themePercentages,
+      backgroundColor: colors.themes.slice(0, themeLabels.length),
+      borderWidth: 2,
+      borderColor: '#ffffff',
+      hoverBorderWidth: 3,
+      hoverOffset: 4
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: {
+          padding: 15,
+          font: { size: 11, weight: '500' },
+          color: '#374151',
+          generateLabels: function(chart) {
+            const data = chart.data;
+            if (data.labels.length && data.datasets.length) {
+              return data.labels.map((label, i) => {
+                const count = themesData[label].count;
+                return {
+                  text: `${label} (${count})`,
+                  fillStyle: data.datasets[0].backgroundColor[i],
+                  strokeStyle: data.datasets[0].borderColor,
+                  lineWidth: data.datasets[0].borderWidth,
+                  hidden: false,
+                  index: i
+                };
+              });
+            }
+            return [];
+          }
+        }
+      },
+      tooltip: {
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        titleColor: '#ffffff',
+        bodyColor: '#ffffff',
+        borderColor: '#d1d5db',
+        borderWidth: 1,
+        cornerRadius: 8,
+        callbacks: {
+          label: function(context) {
+            const theme = context.label;
+            const data = themesData[theme];
+            return `${theme}: ${data.percentage}% (${data.count} rêve${data.count > 1 ? 's' : ''})`;
+          }
+        }
+      }
+    },
+    layout: {
+      padding: 15
+    }
+  }
+});
+{% endif %}
+
+// 6. Graphique timeline - Thématiques avec debugging renforcé
+if (debugThemesTimeline.length > 0 && debugThemesList.length > 0) {
+  console.log('✅ Condition remplie, création du graphique timeline thématiques');
+  
+  const ctxThemesTimeline = document.getElementById('themesTimelineChart').getContext('2d');
+  
+  if (!ctxThemesTimeline) {
+    console.error('❌ Element canvas themesTimelineChart introuvable !');
+  } else {
+    console.log('✅ Canvas trouvé, création des datasets...');
+    
+    // Créer les datasets pour chaque thématique avec debug
+    const themesDatasets = debugThemesList.map((theme, index) => {
+      const data = debugThemesTimeline.map(d => {
+        const value = d[theme] || 0;
+        console.log(`Theme ${theme}, période ${d.period}: ${value}`);
+        return value;
+      });
+      
+      console.log(`Dataset pour ${theme}:`, data);
+      
+      return {
+        label: theme,
+        data: data,
+        borderColor: colors.themes[index % colors.themes.length],
+        backgroundColor: colors.themes[index % colors.themes.length] + '30',
+        borderWidth: 3,
+        tension: 0.4,
+        fill: false,
+        pointBackgroundColor: colors.themes[index % colors.themes.length],
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        pointHoverRadius: 6
+      };
+    });
+    
+    console.log('Tous les datasets créés:', themesDatasets);
+    
+    // Labels pour l'axe X
+    const timelineLabels = debugThemesTimeline.map(d => d.period);
+    console.log('Labels temporels:', timelineLabels);
+    
+    // Créer le graphique
+    try {
+      new Chart(ctxThemesTimeline, {
+        type: 'line',
+        data: {
+          labels: timelineLabels,
+          datasets: themesDatasets
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            intersect: false,
+            mode: 'index'
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { 
+                stepSize: 1,
+                color: '#6b7280'
+              },
+              grid: {
+                color: '#f3f4f6'
+              },
+              title: {
+                display: true,
+                text: 'Nombre de rêves',
+                color: '#6b7280',
+                font: { size: 12, weight: '500' }
+              }
+            },
+            x: {
+              ticks: {
+                color: '#6b7280',
+                maxTicksLimit: 8
+              },
+              grid: {
+                color: '#f3f4f6'
+              },
+              title: {
+                display: true,
+                text: 'Période',
+                color: '#6b7280',
+                font: { size: 12, weight: '500' }
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { 
+                padding: 12, 
+                font: { size: 10, weight: '500' },
+                color: '#374151'
+              }
+            },
+            tooltip: {
+              backgroundColor: 'rgba(0,0,0,0.8)',
+              titleColor: '#ffffff',
+              bodyColor: '#ffffff',
+              borderColor: '#d1d5db',
+              borderWidth: 1,
+              cornerRadius: 8,
+              callbacks: {
+                title: function(context) {
+                  return `Période: ${context[0].label}`;
+                },
+                label: function(context) {
+                  const count = context.parsed.y;
+                  if (count === 0) return null;
+                  return `${context.dataset.label}: ${count} rêve${count > 1 ? 's' : ''}`;
+                },
+                filter: function(tooltipItem) {
+                  return tooltipItem.parsed.y > 0;
+                }
+              }
+            }
+          },
+          layout: {
+            padding: 15
+          }
+        }
+      });
+      console.log('✅ Graphique timeline thématiques créé avec succès');
+    } catch (error) {
+      console.error('❌ Erreur lors de la création du graphique:', error);
+    }
+  }
+} else {
+  console.log('❌ Condition NON remplie pour timeline thématiques:');
+  console.log('- debugThemesTimeline.length:', debugThemesTimeline.length);
+  console.log('- debugThemesList.length:', debugThemesList.length);
+  console.log('- Condition complète:', debugThemesTimeline.length > 0 && debugThemesList.length > 0);
 }
 
 {% endif %}

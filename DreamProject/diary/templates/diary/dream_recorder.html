@@ -291,27 +291,39 @@
         break;
       
       case 'image':
-      imageRevee.innerHTML = "";
-      
-      const img = document.createElement("img");
-      
-      if (data.data.image_path) {
-        img.src = data.data.image_path;
-        img.alt = "Image du rêve";
-      } else {
-        img.src = "{% static 'img/placeholder.png' %}";
-        img.alt = "Image non disponible";
-      }
-      
-      img.className = "pastel-image w-full aspect-[4/3] object-cover mx-auto";
-      img.onerror = function() {
-        console.error('Erreur chargement image');
-        this.style.display = 'none';
-      };
-      
-      imageRevee.appendChild(img);
-      sectionImage.style.display = "block";
-      break;
+        imageRevee.innerHTML = "";
+        const img = document.createElement("img");
+        img.className = "pastel-image w-full aspect-[4/3] object-cover mx-auto";
+        
+        // Gestion d'erreur de chargement cohérente avec le système global
+        img.onerror = function() {
+          console.error('Erreur chargement image:', this.src);
+          
+          // Si c'est déjà le placeholder qui échoue → ÉCHEC GLOBAL
+          if (this.src.includes('placeholder.png')) {
+            console.error('Placeholder image également inaccessible - échec système');
+            handleModelFailure("{{ DREAM_ERROR_MESSAGE|escapejs }}");
+          } else {
+            // Sinon, fallback vers le placeholder
+            this.src = "{% static 'img/placeholder.png' %}";
+            this.alt = "Image non disponible";
+          }
+        };
+        
+        // Logique principale : image générée OU placeholder
+        if (data.data.image_path && data.data.image_path.trim() !== '') {
+          // Image générée avec succès
+          img.src = data.data.image_path;
+          img.alt = "Image du rêve générée par IA";
+        } else {
+          // Pas d'image générée → placeholder direct
+          img.src = "{% static 'img/placeholder.png' %}";
+          img.alt = "Image non disponible";
+        }
+        
+        imageRevee.appendChild(img);
+        sectionImage.style.display = "block";
+        break;
 
       case 'complete':
         sawComplete = true; // succès confirmé

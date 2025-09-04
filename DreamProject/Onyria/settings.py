@@ -10,33 +10,94 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
-import os
+import os, sys
 from pathlib import Path
-
 import dj_database_url
+from dotenv import load_dotenv
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
+# Construction des chemins dans le projet
+BASE_DIR = Path(__file__).resolve().parent.parent          # .../DreamProject/
+ROOT_DIR = BASE_DIR.parent                                  # racine du dépôt
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
+# Charger le .env à la racine du dépôt (utile en local/prod)
+load_dotenv(ROOT_DIR / ".env")
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get("SECRET_KEY", 'django-insecure-y7^764y!vsgk@&0bou_ht(^ca(spl1s!a$sx64b$@@0f=!0-nu')
+# Contexte tests/CI (GitHub Actions, etc.)
+IS_CI_OR_TEST = ("test" in sys.argv) or os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true"
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get("DEBUG", "True").lower() == "true"
+if IS_CI_OR_TEST: os.environ["APP_ENV"] = "test"
 
-# Parse ALLOWED_HOSTS from env allowing commas and/or spaces, without schemes
-_hosts_raw = os.environ.get("ALLOWED_HOSTS", "")
+# Configuration sécurisée - SECRET_KEY obligatoire (fallback uniquement en CI)
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    if IS_CI_OR_TEST:
+        SECRET_KEY = "django-insecure-ci-test-only"
+    else:
+        raise ValueError("SECRET_KEY doit être définie (variable d'environnement ou .env)")
+
+# DEBUG désactivé par défaut, mais activé par défaut en CI/tests pour éviter les blocages de checks stricts
+DEBUG = os.getenv("DEBUG", "True" if IS_CI_OR_TEST else "False").lower() == "true"
+
+# Analyse des ALLOWED_HOSTS depuis l'env permettant virgules et/ou espaces, sans schémas
+_hosts_raw = os.getenv("ALLOWED_HOSTS", "")
 ALLOWED_HOSTS = [
     h.strip()
     for h in _hosts_raw.replace("https://", "").replace("http://", "").replace(",", " ").split()
     if h.strip()
 ]
 
-# Application definition
+# En production, ALLOWED_HOSTS ne peut pas être vide (mais OK en tests)
+if not DEBUG and not ALLOWED_HOSTS and not IS_CI_OR_TEST:
+    raise ValueError("ALLOWED_HOSTS doit être défini quand DEBUG=False")
 
+# Configuration IA et modèles - centralisée pour faciliter la maintenance
+AI_CONFIG = {
+    # Modèles utilisés
+    'WHISPER_MODEL': 'whisper-large-v3-turbo',
+    'IMAGE_GENERATION_MODEL': 'mistral-medium-2505',
+    'EMOTION_MODEL': 'mistral-small-latest',
+    'INTERPRETATION_MODEL': 'mistral-large-latest',
+    
+    # Paramètres de retry
+    'TRANSCRIBE_MAX_RETRIES': 3,
+    'TRANSCRIBE_BACKOFF_BASE': 1.5,
+    
+    # Timeouts et limites
+    'DEFAULT_TEMPERATURE': 0.0,
+    'API_TIMEOUT': 30,
+    'SSE_SLOW_WARNING_THRESHOLD': 15,
+    
+    # Hiérarchies de fallback par modèle
+    'FALLBACK_CHAINS': {
+        'mistral-large-latest': ['mistral-medium', 'mistral-small-latest', 'open-mistral-7b'],
+        'mistral-medium': ['mistral-small-latest', 'open-mistral-7b'],
+        'mistral-small-latest': ['open-mistral-7b'],
+        'open-mistral-7b': [],
+    },
+
+    # RÈGLES DE RETRY/FALLBACK CHAT (source de vérité unique)
+    'RETRYABLE_STATUS': [408, 429, 500, 502, 503, 504],
+    'RETRYABLE_KEYWORDS': [
+        "too many requests",
+        "rate limit",
+        "service_unavailable",
+        "temporarily unavailable",
+        "timeout",
+        "capacity",
+        "service tier capacity",
+    ],
+    'CHAT_RETRY_BASE_DELAY_S': 0.5,
+    'CHAT_RETRY_MAX_DELAY_S': 3.0,
+}
+
+# Clés API depuis les variables d'environnement
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+
+# Variable pour détecter le mode test
+TESTING = 'test' in sys.argv
+
+# Définition des applications
 INSTALLED_APPS = [
     "whitenoise.runserver_nostatic",
     "diary.apps.DiaryConfig",
@@ -80,11 +141,11 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'Onyria.wsgi.application'
 
-# Database
+# Base de données
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 # Configuration adaptative : utilise DATABASE_URL si présent, sinon SQLite local
-database_url = os.environ.get("DATABASE_URL")
+database_url = os.getenv("DATABASE_URL")
 if database_url:
     DATABASES = {
         'default': dj_database_url.parse(database_url)
@@ -97,7 +158,7 @@ else:
         }
     }
 
-# Password validation
+# Validation de mot de passe
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -115,7 +176,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-# Internationalization
+# Internationalisation
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'
@@ -126,7 +187,7 @@ USE_I18N = True
 
 USE_TZ = True
 
-# Static files (CSS, JavaScript, Images)
+# Fichiers statiques (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = '/static/'
@@ -147,10 +208,10 @@ else:
         "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
     }
 
-# Emplacement de tes sources d'assets (dossier 'static' à la racine du repo)
+# Emplacement des sources d'assets (dossier 'static' à la racine du repo)
 STATICFILES_DIRS = [ BASE_DIR.parent / "static" ]
 
-# Default primary key field type
+# Type de clé primaire par défaut
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
@@ -160,7 +221,7 @@ AUTH_USER_MODEL = 'accounts.CustomUser'  # Modèle personnalisé
 LOGIN_REDIRECT_URL = '/diary/record/'
 LOGOUT_REDIRECT_URL = 'login'
 
-# LOGGING CONFIGURATION
+# CONFIGURATION DES LOGS
 # Adapte automatiquement le niveau selon l'environnement :
 # - Développement (DEBUG=True) : logs DEBUG pour diagnostic détaillé
 # - Production (DEBUG=False) : logs INFO+ pour monitoring essentiel

@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 import base64
+from datetime import date
 
 class CustomUser(AbstractUser):
     GENDER_CHOICES = [
@@ -9,16 +10,16 @@ class CustomUser(AbstractUser):
         ('O', 'Autre'),
         ('N', 'Préfère ne pas dire'),
     ]
-    
+
     email = models.EmailField(unique=True)
-    
-    age = models.PositiveIntegerField(
-        "Âge",
+
+    date_of_birth = models.DateField(
+        "Date de naissance",
         null=True,
         blank=True,
-        help_text="Votre âge"
+        help_text="Format AAAA-MM-JJ"
     )
-    
+
     sexe = models.CharField(
         "Sexe",
         max_length=1,
@@ -27,14 +28,14 @@ class CustomUser(AbstractUser):
         null=True,
         help_text="Votre sexe"
     )
-    
+
     profile_picture_base64 = models.TextField(
         blank=True,
         null=True,
         verbose_name="Photo de profil (base64)",
         help_text="Photo de profil encodée en base64"
     )
-    
+
     bio = models.CharField(
         "Bio",
         max_length=180,
@@ -67,3 +68,14 @@ class CustomUser(AbstractUser):
     def profile_picture_url(self):
         """Retourne l'URL de la photo de profil en base64"""
         return self.profile_picture_base64
+
+    # Âge calculé automatiquement à partir de la date de naissance
+    @property
+    def age(self):
+        if not self.date_of_birth:
+            return None
+        today = date.today()
+        years = today.year - self.date_of_birth.year - (
+            (today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day)
+        )
+        return years
