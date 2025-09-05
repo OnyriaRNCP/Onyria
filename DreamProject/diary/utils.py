@@ -720,18 +720,22 @@ def generate_image_from_text(user, prompt_text, dream_instance):
 
         except Exception as e:
             error_msg = str(e).lower()
-            reason = "error"
+            reason = None
+
             if "insufficient_quota" in error_msg or "quota" in error_msg:
                 logger.warning(f"Quota image atteint: {e}")
                 reason = "quota"
-            elif "rate_limit" in error_msg or "too many requests" in error_msg:
+            elif "rate_limit" in error_msg or "too many requests" in error_msg or "429" in error_msg:
                 logger.warning(f"Rate limit image: {e}")
                 reason = "rate_limit"
             else:
                 logger.error(f"Erreur image: {e}")
+                # fallback: raison brute (tronquée pour éviter un pavé énorme en JSONL)
+                reason = error_msg[:200] if error_msg else "error"
 
             metric_fail("mistral", "image", int((time.time() - start_time) * 1000), reason=reason)
             return False
+
 
     except Exception as e:
         duration = time.time() - start_time

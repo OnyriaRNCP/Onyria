@@ -63,10 +63,10 @@ class _Store:
         self.latency.setdefault(key, []).append(int(latency_ms))
 
     def _record_error(self, key: str, reason: Optional[str]) -> None:
-        if not reason:
-            return
         bucket = self.errors.setdefault(key, {})
-        bucket[reason] = bucket.get(reason, 0) + 1
+        final_reason = reason or "unknown"
+        bucket[final_reason] = bucket.get(final_reason, 0) + 1
+
 
     #Enregistrer durée d'étape pipeline
     def record_pipeline_duration(self, step: str, duration_ms: int) -> None:
@@ -411,9 +411,10 @@ def _load_complete_jsonl_snapshot() -> Dict:
                     "started_at": rec.get("started_at", time.time()),
                     "first_event_at": rec.get("started_at", time.time()) + 1,
                     "events_count": 5,
-                    "completed": True,
-                    "aborted": False
+                    "completed": rec.get("sse_completed", True),
+                    "aborted": rec.get("sse_aborted", False),
                 })
+
 
     except Exception as e:
         logger.warning(f"Erreur lecture dev_traces.jsonl: {e}")
@@ -609,10 +610,11 @@ def metric_fail(provider: str, op: str, latency_ms: Optional[int] = None, reason
     """API d'enregistrement d'échec."""
     if not _COLLECT_ENABLED:
         return
-    _STORE.record_fail(provider, op, latency_ms, reason)
+    final_reason = reason or "unknown"
+    _STORE.record_fail(provider, op, latency_ms, final_reason)
     logger.info(
         "[METRIC] provider=%s op=%s status=failed reason=%s latency_ms=%s",
-        provider, op, (reason or "unknown"), latency_ms if latency_ms is not None else "0",
+        provider, op, final_reason, latency_ms if latency_ms is not None else "0",
     )
     # --- AJOUT: persistance DEV ---
     if _APP_ENV == "dev" and _PERSIST_METRICS:
@@ -622,7 +624,7 @@ def metric_fail(provider: str, op: str, latency_ms: Optional[int] = None, reason
             "op": op,
             "status": "failed",
             "latency_ms": int(latency_ms) if latency_ms is not None else None,
-            "reason": reason or "unknown",
+            "reason": final_reason,
         })
 
 def get_snapshot() -> Dict:
@@ -691,13 +693,13 @@ def calculate_business_metrics() -> Dict:
    PRICING = {
        'groq': {
            # transcription Whisper v3 Turbo
-           'transcribe': 0.001   # USD / rêve (~1 min audio, sur-estimé)
+           'transcribe': 0.001   # USD / appel (~1 min audio, sur-estimé)
        },
        'mistral': {
            # analyse émotionnelle (Small)
-           'emotion': 0.0003,    # USD / rêve (sur-estimé)
+           'emotion': 0.0003,    # USD / appel (sur-estimé)
            # interprétation du rêve (Large)
-           'interpretation': 0.0035,  # USD / rêve (sur-estimé)
+           'interpretation': 0.0035,  # USD / appel (sur-estimé)
            # génération d'image (agent image_generation)
            'image': 0.06         # USD / image 
        }
@@ -709,16 +711,26 @@ def calculate_business_metrics() -> Dict:
        dev_traces = get_dev_traces_summary()
        completed_dreams = dev_traces.get("total", 0) if dev_traces else 0
        data_source = "JSONL traces"
+       snapshot = _load_complete_jsonl_snapshot()
+       availability = snapshot.get("availability", {})
    else:
        # PROD: depuis session active
        completed_dreams = _STORE.availability.get("mistral.interpretation", {}).get("ok", 0)
        data_source = "session metrics"
+       availability = _STORE.availability
 
-   # 2. Récupérer le nombre réel d'images
+   # 2. Helper pour récupérer les vrais appels réussis
+   def get_ok(provider: str, op: str) -> int:
+       return availability.get(f"{provider}.{op}", {}).get("ok", 0)
+
+   # 3. Récupérer les vrais appels par opération
+   transcribe_count = get_ok("groq", "transcribe")
+   emotion_count = get_ok("mistral", "emotion")
+   interpretation_count = get_ok("mistral", "interpretation")
+
+   # 4. Récupérer le nombre réel d'images
    images_count = 0
-   
    if _APP_ENV == "dev" and _PERSIST_TRACES and os.path.exists(_TRACES_PATH):
-       # DEV: compter has_image=true dans les traces
        try:
            with open(_TRACES_PATH, "r", encoding="utf-8") as f:
                for line in f:
@@ -731,22 +743,19 @@ def calculate_business_metrics() -> Dict:
        except Exception:
            pass
    else:
-       # PROD: utiliser les appels API réussis d'images
-       images_count = _STORE.availability.get("mistral.image", {}).get("ok", 0)
+       images_count = get_ok("mistral", "image")
 
-   # 3. Calculer les coûts (même logique pour DEV et PROD)
+   # 5. Calculer les coûts (basé sur les appels réels)
    estimated_cost = (
-       completed_dreams * PRICING['groq']['transcribe'] +
-       completed_dreams * PRICING['mistral']['emotion'] + 
-       completed_dreams * PRICING['mistral']['interpretation'] +
+       transcribe_count * PRICING['groq']['transcribe'] +
+       emotion_count * PRICING['mistral']['emotion'] + 
+       interpretation_count * PRICING['mistral']['interpretation'] +
        images_count * PRICING['mistral']['image']
    )
 
-   # 4. Calculer la durée de session
+   # 6. Calculer la durée de session
    session_duration_hours = 0.0
-   
    if _APP_ENV == "dev" and _PERSIST_TRACES:
-       # DEV: depuis les vraies dates JSONL
        dev_traces = get_dev_traces_summary()
        if dev_traces and dev_traces.get("first_result_at") and dev_traces.get("last_result_at"):
            try:
@@ -757,17 +766,18 @@ def calculate_business_metrics() -> Dict:
            except Exception:
                session_duration_hours = 0.0
    else:
-       # PROD: depuis le démarrage du processus
        session_duration_hours = round((time.time() - _STORE.started_at) / 3600, 1)
 
-   # 5. Calculer dreams_per_day et cost_per_dream
+   # 7. Calculer dreams_per_day et cost_per_dream
    dreams_per_day = calculate_real_dreams_per_day()
    cost_per_dream = estimated_cost / completed_dreams if completed_dreams > 0 else 0
-   
-   # 6. Notes cohérentes avec la source des données
+
+   # 8. Notes cohérentes avec la source des données
    notes = (
-       f"Costs based on {completed_dreams} completed dreams "
-       f"({images_count} with images) from {data_source}. "
+        f"Costs based on {transcribe_count} transcriptions, "
+        f"{emotion_count} emotion analyses, "
+        f"{interpretation_count} interpretations, "
+        f"and {images_count} images from {data_source}. "
        "Estimates use fixed rates per operation. "
        "More accurate costs require actual audio duration, "
        "token counts (input/output), image parameters, and current API pricing."
@@ -797,6 +807,9 @@ def record_dream_trace(
     emotion_ms: Optional[int] = None,
     image_ms: Optional[int] = None,
     interpretation_ms: Optional[int] = None,
+    sse_completed: bool = True,
+    sse_aborted: bool = False,
+    sse_event_count: int = 0,   # <-- ajout
 ) -> None:
     """Enregistre une trace de rêve en DEV."""
     if not (_APP_ENV == "dev" and _PERSIST_TRACES):
@@ -815,6 +828,9 @@ def record_dream_trace(
         "emotion_ms": emotion_ms,
         "image_ms": image_ms,
         "interpretation_ms": interpretation_ms,
+        "sse_completed": sse_completed,
+        "sse_aborted": sse_aborted,
+        "sse_event_count": sse_event_count,
     }
     _append_jsonl(_TRACES_PATH, rec, max_lines=_MAX_TRACES)
 
