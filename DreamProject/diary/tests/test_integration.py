@@ -375,12 +375,10 @@ class MultiUserIsolationTest(TestCase):
 
         Objectif : VÉrifier que les stats sont calculÉes uniquement sur les rêves de l'utilisateur
         """
-        # Mock avec des réponses différentes selon l'utilisateur (side_effect)
-        def mock_themes_response(user):
-            if user == self.user1:
-                return [("Thèmes joyeux", 5)]
-            else:
-                return [("Thèmes sombres", 4)]
+        mock_themes.return_value = [
+        ("Thèmes génériques", 3),
+        ("Émotions variées", 2)
+        ]
         
         mock_themes.side_effect = mock_themes_response
         # User1 : profil très joyeux
