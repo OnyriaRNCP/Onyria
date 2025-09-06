@@ -25,10 +25,7 @@ from .metrics.runtime import (
 from collections import Counter, defaultdict
 from .models import Dream
 from typing import Any, Mapping, Optional
-from .constants import (
-    EMOTION_LABELS,
-    DREAM_TYPE_LABELS
-)
+from .constants import EMOTION_LABELS, DREAM_TYPE_LABELS
 
 # Chargement des variables d'environnement
 load_dotenv()
@@ -212,8 +209,39 @@ def _transcribe_via_httpx(file_path: str, language: str = "fr") -> str | None:
 # ---------- TRANSCRIPTION ----------
 
 
+def validate_transcription_length(transcription):
+    """
+    Valide si la transcription est suffisante pour l'analyse
+    Retourne (is_valid, error_message)
+    """
+    if not transcription or not transcription.strip():
+        return (
+            False,
+            "Aucun contenu détecté. Veuillez réessayer votre enregistrement.",
+        )
+
+    # Nettoyer le texte (enlever espaces, ponctuation basique)
+    clean_text = (
+        transcription.strip()
+        .replace('.', '')
+        .replace(',', '')
+        .replace('!', '')
+        .replace('?', '')
+    )
+    words = clean_text.split()
+
+    # Minimum 5 mots pour une analyse cohérente
+    if len(words) < 5:
+        return (
+            False,
+            "Enregistrement trop court. Décrivez votre rêve avec plus de détails pour une meilleure analyse.",
+        )
+
+    return True, None
+
+
 def transcribe_audio(audio_data, language="fr"):
-    """Transcrit un audio en texte avec Whisper de Groq + système retry"""
+    """Transcrit un audio en texte avec Whisper de Groq + système retry + validation longueur"""
     logger.info(f"Transcription audio démarrée - {len(audio_data)} bytes")
     start_time = time.time()
 
@@ -281,8 +309,25 @@ def transcribe_audio(audio_data, language="fr"):
                     )
                 if duration > 5:
                     logger.warning(f"Transcription lente: {duration:.2f}s")
+
+                # VALIDATION DE LA LONGUEUR DE TRANSCRIPTION
+                is_valid, error_message = validate_transcription_length(
+                    transcription.text
+                )
+                if not is_valid:
+                    logger.warning(
+                        f"Transcription trop courte rejetée: '{transcription.text[:50]}...'"
+                    )
+                    metric_fail(
+                        "groq",
+                        "transcribe",
+                        int((time.time() - start_time) * 1000),
+                        reason="too_short",
+                    )
+                    return {"error": "too_short", "message": error_message}
+
                 logger.info(
-                    f"Transcription réussie - {len(transcription.text)} caractères en {duration:.2f}s"
+                    f"Transcription valide - {len(transcription.text)} caractères en {duration:.2f}s"
                 )
                 metric_ok("groq", "transcribe", int(duration * 1000))
                 return transcription.text
@@ -332,6 +377,20 @@ def transcribe_audio(audio_data, language="fr"):
                 metric_retry(
                     "groq", "transcribe", total_retry_count, total_backoff_ms
                 )
+
+            # VALIDATION DE LA LONGUEUR POUR LE FALLBACK HTTPX AUSSI
+            is_valid, error_message = validate_transcription_length(result)
+            if not is_valid:
+                logger.warning(
+                    f"Transcription HTTPX trop courte rejetée: '{result[:50]}...'"
+                )
+                metric_fail(
+                    "groq",
+                    "transcribe",
+                    int((time.time() - start_time) * 1000),
+                    reason="too_short",
+                )
+                return {"error": "too_short", "message": error_message}
 
             metric_ok("groq", "transcribe", int(duration * 1000))
             return result
@@ -1226,8 +1285,10 @@ def analyze_recurring_themes(user, min_dreams=2, min_occurrence=2):
         ],
         'message': f"{len(result['themes'])} thématiques trouvées (Mistral IA)",
     }
-    
+
+
 # ---------- PROFIL ONYRIQUE ----------
+
 
 def get_profil_onirique_stats(user):
     """Calcule les statistiques du profil onirique d'un utilisateur"""
