@@ -390,15 +390,14 @@ class StatisticsAndProfilingTest(TestCase):
         )
         
     @patch('diary.utils.analyze_themes_with_mistral')
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_get_profil_onirique_stats_no_dreams(self, mock_themes):
         """
         Test des statistiques avec aucun rêve.
 
         Objectif : Vérifier la gestion du cas "utilisateur nouveau"
         """
-        # Mock pas nécessaire pour ce test (aucun rêve = pas d'appel à analyze_themes)
         stats = get_profil_onirique_stats(self.user)
+        mock_themes.return_value = None
 
         # Vérifications pour utilisateur sans rêves
         self.assertEqual(stats['statut_reveuse'], "silence onirique")
