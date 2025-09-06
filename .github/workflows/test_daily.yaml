@@ -1,8 +1,8 @@
 name: Daily Tests
 
 on:
-  push: 
-    branches: 
+  push:
+    branches:
       - fix-workflows-ko
   schedule:
     - cron: "0 6 * * *"
@@ -26,61 +26,79 @@ jobs:
   daily-tests:
     name: "Tests Quotidiens"
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
-      
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install coverage flake8 black tblib
-      
+
+      - name: Run Forms tests (Accounts)
+        working-directory: DreamProject
+        run: |
+          echo "Tests formulaires accounts..."
+          python manage.py test accounts.tests.test_forms --verbosity=2
+
+      - name: Run Models tests (Accounts)
+        working-directory: DreamProject
+        run: |
+          echo "Tests modèles accounts..."
+          python manage.py test accounts.tests.test_models --verbosity=2
+
+      - name: Run Security tests (Accounts)
+        working-directory: DreamProject
+        run: |
+          echo "Tests sécurité accounts..."
+          python manage.py test accounts.tests.test_security --verbosity=2
+
       - name: Run Models tests
         working-directory: DreamProject
         run: |
           echo "Tests des modèles Django..."
           python manage.py test diary.tests.test_models --verbosity=2
-      
+
       - name: Run Utils tests
         working-directory: DreamProject
         run: |
           echo "Tests des utilitaires..."
           python manage.py test diary.tests.test_utils --verbosity=2
-      
+
       - name: Run Views tests
         working-directory: DreamProject
         run: |
           echo "Tests des vues Django..."
           python manage.py test diary.tests.test_views --verbosity=2
-      
+
       - name: Run AI tests (Extended only)
         working-directory: DreamProject
         if: github.event.inputs.test_level == 'extended' || github.event_name == 'schedule'
         run: |
           echo "Tests IA (mode étendu)..."
           python manage.py test diary.tests.test_ai_functions --verbosity=2
-      
+
       - name: Code quality checks
         run: |
           echo "Vérifications qualité du code..."
-          
+
           echo "Formatage avec Black..."
           black .
 
           echo "Linting critique..."
           flake8 DreamProject/diary/ --count --select=E9,F63,F7,F82 --show-source --statistics
-          
+
           echo "Statistiques générales..."
           flake8 DreamProject/diary/ --count --exit-zero --max-complexity=10 --statistics
-      
+
       - name: Run coverage analysis
         working-directory: DreamProject
         run: |
@@ -88,7 +106,7 @@ jobs:
           coverage run --source='diary' manage.py test diary.tests.test_models diary.tests.test_utils diary.tests.test_views
           coverage report --show-missing
           coverage html
-      
+
       - name: Upload coverage reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -103,7 +121,7 @@ jobs:
           echo "Date: $(date)"
           echo "Branche: ${{ github.ref_name }}"
           echo "Commit: ${{ github.sha }}"
-          
+
           if [ "${{ job.status }}" = "success" ]; then
             echo " Tests quotidiens RÉUSSIS"
             echo "Toutes les suites de tests ont passé avec succès"
@@ -111,5 +129,5 @@ jobs:
             echo "Échecs détectés dans les tests quotidiens"
             echo "Vérifier les logs ci-dessus pour plus de détails"
           fi
-          
+
           echo "Niveau de test: ${{ github.event.inputs.test_level || 'standard' }}"
