@@ -105,7 +105,6 @@ class DreamDiaryViewTest(TestCase):
         )
         self.assertEqual(response.context['pourcentage_reveuse'], 0)
 
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_dream_diary_view_with_dreams(self, mock_themes):
         """
         Test de la vue dream_diary avec des rêves existants.
@@ -274,7 +273,6 @@ class DreamDiaryViewTest(TestCase):
 
         self.assertTemplateUsed(response, 'diary/dream_diary.html')
 
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_dream_diary_view_performance_with_many_dreams(self, mock_themes):
         """
         Test de performance de la vue avec beaucoup de rêves.
@@ -450,7 +448,6 @@ class DreamFollowupViewTest(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn('login', response.url.lower())
 
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_dream_followup_view_default(self, mock_themes):
         """Test de la vue avec paramètres par défaut (toutes les données)"""
         mock_themes.return_value = [
@@ -519,7 +516,6 @@ class DreamFollowupViewTest(TestCase):
             response.context['current_end_date'], end_date.strftime('%Y-%m-%d')
         )
 
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_dream_followup_view_context_completeness(self, mock_themes):
         """Test de complétude du contexte"""
         mock_themes.return_value = [
@@ -561,7 +557,6 @@ class DreamFollowupViewTest(TestCase):
         self.assertEqual(stats['total'], 0)
         
         
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_dream_followup_view_emotions_formatting(self, mock_themes):
         """Test du formatage des émotions dans le contexte"""
         mock_themes.return_value = [
@@ -609,7 +604,6 @@ class DreamFollowupViewTest(TestCase):
             response.context['date_range_display'],
         )
 
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_dream_followup_view_user_isolation(self, mock_themes):
         """Test d'isolation des données utilisateur"""
         # Mock pour éviter l'appel API
@@ -642,7 +636,6 @@ class DreamFollowupViewTest(TestCase):
         emotions_stats = response.context['emotions_stats']
         self.assertNotIn('Bonheur', emotions_stats.keys())
 
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_dream_followup_view_template_content(self, mock_themes):
         """Test du contenu rendu dans le template"""
         # Mock pour éviter l'appel API
@@ -662,7 +655,6 @@ class DreamFollowupViewTest(TestCase):
         # Si Chart.js est inclus
         self.assertContains(response, 'chart.min.js')
 
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_dream_followup_view_performance(self, mock_themes):
         """Test de performance de la vue"""
         # Mock pour éviter l'appel API avec beaucoup de rêves
