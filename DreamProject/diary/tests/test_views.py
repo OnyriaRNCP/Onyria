@@ -662,8 +662,14 @@ class DreamFollowupViewTest(TestCase):
         # Si Chart.js est inclus
         self.assertContains(response, 'chart.min.js')
 
-    def test_dream_followup_view_performance(self):
+    @patch('diary.utils.analyze_themes_with_mistral')
+    def test_dream_followup_view_performance(self, mock_themes):
         """Test de performance de la vue"""
+        # Mock pour éviter l'appel API avec beaucoup de rêves
+        mock_themes.return_value = [
+            ("Performance test", 30),
+            ("Thème secondaire", 20)
+        ]
         # Créer beaucoup de rêves
         batch_dreams = []
         for i in range(50):
