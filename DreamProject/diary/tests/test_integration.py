@@ -875,10 +875,9 @@ class WorkflowRobustnessTest(TestCase):
         response = self.client.get(reverse('analyse_from_voice'))
         self.assertEqual(response.status_code, 405)
 
-    @patch('diary.utils.BERTOPIC_AVAILABLE', False)
     def test_theme_fallback_robustness(self):
         """
-        Test de robustesse : fallback quand BERTopic indisponible.
+        Test de robustesse : fallback quand mistral indisponible.
         """
         # Créer des rêves pour tester le fallback
         for i in range(8):
