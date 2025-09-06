@@ -165,17 +165,27 @@ def analyse_from_voice(request):
 
             # TRANSCRIPTION
             step_times['transcribe_start'] = time.time()
-            transcription = transcribe_audio(audio_data)
+            transcription_result = transcribe_audio(audio_data)
             step_times['transcribe_end'] = time.time()
             transcribe_duration = int((step_times['transcribe_end'] - step_times['transcribe_start']) * 1000)
             metric_pipeline_duration("transcribe_ms", transcribe_duration)
 
-            if not transcription:
+            if not transcription_result:
                 logger.error("Analyse SSE: échec transcription")
                 yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
                 metric_sse_abort(session_id)
                 aborted = True
                 return
+            
+            if isinstance(transcription_result, dict) and transcription_result.get('error') == 'too_short':
+                logger.warning("Analyse SSE: transcription trop courte")
+                yield f"data: {json.dumps({'step': 'too_short', 'message': transcription_result['message']})}\n\n"
+                metric_sse_abort(session_id)
+                aborted = True
+                return
+            
+            # Si on arrive ici, transcription_result est une string valide
+            transcription = transcription_result
 
             # Premier événement SSE
             if not first_event_sent:
