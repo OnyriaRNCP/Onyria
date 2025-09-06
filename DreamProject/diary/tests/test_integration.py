@@ -13,10 +13,8 @@ Ce module teste les workflows complets de l'application :
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from unittest.mock import patch, MagicMock
-import json
+from unittest.mock import patch
 import tempfile
-import time
 import os
 
 from ..models import Dream
