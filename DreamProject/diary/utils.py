@@ -1,7 +1,5 @@
 import os
 import json
-import sys
-import re
 import math
 import time
 import tempfile
@@ -9,10 +7,9 @@ import logging
 import httpx
 import random
 import unicodedata
-from typing import List, Dict
+from typing import List
 from datetime import datetime, timedelta
 from django.utils import timezone
-from django.core.files.base import ContentFile
 from django.db.models import Count
 from django.db.models.functions import TruncDate
 from django.conf import settings
@@ -30,9 +27,7 @@ from .models import Dream
 from typing import Any, Mapping, Optional
 from .constants import (
     EMOTION_LABELS,
-    DREAM_TYPE_LABELS,
-    THEME_CATEGORIES,
-    DREAM_SPECIFIC_STOPWORDS,
+    DREAM_TYPE_LABELS
 )
 
 # Chargement des variables d'environnement
