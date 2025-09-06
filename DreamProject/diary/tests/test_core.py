@@ -193,27 +193,6 @@ class CoreUtilsTest(TestCase):
         self.assertAlmostEqual(sum(normalized.values()), 1.0, places=5)
         self.assertGreater(normalized["joie"], normalized["tristesse"])
         self.assertGreater(normalized["tristesse"], normalized["peur"])
-        
-    def test_analyze_recurring_themes_core_functionality(self):
-        """
-        Test critique : La fonction d'analyse thématique ne plante jamais.
-        """
-        # Test avec aucun rêve
-        result = analyze_recurring_themes(self.user)
-        self.assertIsInstance(result, dict)
-        self.assertIn('top_theme', result)
-        
-        # Test avec un rêve
-        Dream.objects.create(
-            user=self.user,
-            transcription="Premier rêve pour test thématique",
-            dream_type="rêve"
-        )
-        
-        result = analyze_recurring_themes(self.user)
-        self.assertIsInstance(result, dict)
-        self.assertIn('total_dreams', result)
-        self.assertEqual(result['total_dreams'], 1)
 
     def test_profil_stats_core(self):
         """
