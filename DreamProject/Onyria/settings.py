@@ -57,6 +57,7 @@ AI_CONFIG = {
     'IMAGE_GENERATION_MODEL': 'mistral-medium-2505',
     'EMOTION_MODEL': 'mistral-small-latest',
     'INTERPRETATION_MODEL': 'mistral-large-latest',
+    'THEMES_MODEL': 'mistral-large-latest',
     
     # Paramètres de retry
     'TRANSCRIBE_MAX_RETRIES': 3,
@@ -184,7 +185,9 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+USE_TZ = True
+
+TIME_ZONE = "Europe/Paris"
 
 USE_I18N = True
 

@@ -112,8 +112,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: DreamProject/htmlcov/
-
+          path: DreamProject/COVERAGE/
+      
       - name: Test Summary
         if: always()
         run: |

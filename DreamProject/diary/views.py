@@ -140,18 +140,21 @@ def analyse_from_voice(request):
         session_id = str(uuid.uuid4())
         metric_sse_start(session_id)
         first_event_sent = False
-        
+
         start_time = time.time()
         dream = None  # suivi du rêve provisoire pour pouvoir le supprimer en cas d'échec critique
-        
+        aborted = False  # <--- flag ajouté
+        event_count = 0  # <--- compteur d'events SSE
+
         # Variables pour tracking des durées par étape
         step_times = {}
-        
+
         try:
             if 'audio' not in request.FILES:
                 logger.error("Analyse SSE: aucun fichier audio reçu")
                 yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
                 metric_sse_abort(session_id)
+                aborted = True
                 return
 
             audio_file = request.FILES['audio']
@@ -166,18 +169,20 @@ def analyse_from_voice(request):
             step_times['transcribe_end'] = time.time()
             transcribe_duration = int((step_times['transcribe_end'] - step_times['transcribe_start']) * 1000)
             metric_pipeline_duration("transcribe_ms", transcribe_duration)
-            
+
             if not transcription:
                 logger.error("Analyse SSE: échec transcription")
                 yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
                 metric_sse_abort(session_id)
+                aborted = True
                 return
-            
+
             # Premier événement SSE
             if not first_event_sent:
                 metric_sse_first_event(session_id)
                 first_event_sent = True
             metric_sse_event(session_id)
+            event_count += 1
             yield f"data: {json.dumps({'step': 'transcription', 'data': {'transcription': transcription}})}\n\n"
 
             # ÉMOTIONS
@@ -186,15 +191,15 @@ def analyse_from_voice(request):
             step_times['emotion_end'] = time.time()
             emotion_duration = int((step_times['emotion_end'] - step_times['emotion_start']) * 1000)
             metric_pipeline_duration("emotion_ms", emotion_duration)
-            
+
             if emotions is None:
                 logger.error("Analyse SSE: échec analyse émotionnelle")
                 yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
                 metric_sse_abort(session_id)
+                aborted = True
                 return
             dream_type = classify_dream(emotions)
 
-            # format "clé brute" (ex: 'joie', 'rêve') -> labels FR
             raw_dominant_key = (
                 dominant_emotion[0]
                 if isinstance(dominant_emotion, (list, tuple))
@@ -203,11 +208,11 @@ def analyse_from_voice(request):
             formatted_dominant_emotion = format_emotion_label(raw_dominant_key)
             formatted_dream_type = format_dream_type_label(dream_type)
 
-            # Contrat SSE : renvoyer des strings (ex: 'Joie', 'Rêve')
             metric_sse_event(session_id)
+            event_count += 1
             yield f"data: {json.dumps({'step': 'emotions', 'data': {'dominant_emotion': formatted_dominant_emotion, 'dream_type': formatted_dream_type}})}\n\n"
 
-            # Sauvegarde (créer le rêve d'abord pour avoir l'ID)
+            # Sauvegarde du rêve
             dream = Dream.objects.create(
                 user=request.user,
                 transcription=transcription,
@@ -227,22 +232,23 @@ def analyse_from_voice(request):
             step_times['image_end'] = time.time()
             image_duration = int((step_times['image_end'] - step_times['image_start']) * 1000)
             metric_pipeline_duration("image_ms", image_duration)
-            
+
             if image_success:
                 dream.refresh_from_db()
                 if dream.image_url:
                     logger.info(f"Image envoyée via SSE pour rêve {dream.id}")
                     metric_sse_event(session_id)
+                    event_count += 1
                     yield f"data: {json.dumps({'step': 'image', 'data': {'image_path': dream.image_url}})}\n\n"
                 else:
-                    logger.warning(
-                        f"Image générée mais URL manquante pour rêve {dream.id}"
-                    )
+                    logger.warning(f"Image générée mais URL manquante pour rêve {dream.id}")
                     metric_sse_event(session_id)
+                    event_count += 1
                     yield f"data: {json.dumps({'step': 'image', 'data': {'image_path': None}})}\n\n"
             else:
                 logger.warning(f"Échec génération image pour rêve {dream.id}")
                 metric_sse_event(session_id)
+                event_count += 1
                 yield f"data: {json.dumps({'step': 'image', 'data': {'image_path': None}})}\n\n"
 
             # INTERPRÉTATION
@@ -251,10 +257,9 @@ def analyse_from_voice(request):
             step_times['interpretation_end'] = time.time()
             interpretation_duration = int((step_times['interpretation_end'] - step_times['interpretation_start']) * 1000)
             metric_pipeline_duration("interpretation_ms", interpretation_duration)
-            
+
             if interpretation is None:
                 logger.error("Analyse SSE: échec interprétation")
-                # En cas d'échec critique, ne conserver AUCUN rêve
                 try:
                     if dream is not None:
                         dream.delete()
@@ -262,87 +267,70 @@ def analyse_from_voice(request):
                     pass
                 yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
                 metric_sse_abort(session_id)
+                aborted = True
                 return
 
-            # Mettre à jour le rêve avec l'interprétation
             dream.interpretation = interpretation
             dream.save()
 
-            # Envoyer l'interprétation
             metric_sse_event(session_id)
+            event_count += 1
             yield f"data: {json.dumps({'step': 'interpretation', 'data': {'interpretation': interpretation}})}\n\n"
 
             total_duration = time.time() - start_time
-            if total_duration > settings.AI_CONFIG['SSE_SLOW_WARNING_THRESHOLD']:
-                logger.warning(f"Analyse SSE lente: {total_duration:.2f}s pour user {request.user.id}")
-            
-            logger.info(f"Analyse SSE user {request.user.id} réussie - Type: {dream_type}, Émotion: {raw_dominant_key} en {total_duration:.2f}s")
+            metric_pipeline_duration("total_workflow_ms", int(total_duration * 1000))
 
-            # --- en DEV, on garde une trace "par rêve" (historique, max 100) avec durées d'étape ---
-            try:
-                record_dream_trace(
-                    dream_id=dream.id,
-                    user_id=request.user.id,
-                    created_at_ts=float(dream.created_at.timestamp()) if dream.created_at else time.time(),
-                    dream_type=dream_type,
-                    dominant_emotion=raw_dominant_key or "",
-                    has_image=bool(getattr(dream, "image_url", None)),
-                    total_duration_ms=int(total_duration * 1000),
-                    started_at_ts=float(start_time),
-                    # NOUVEAU: durées par étape
-                    transcribe_ms=transcribe_duration,
-                    emotion_ms=emotion_duration,
-                    image_ms=image_duration,
-                    interpretation_ms=interpretation_duration,
-                )
-            except Exception:
-                # on ne veut pas casser le flux SSE si la trace échoue
-                pass
-
-            # Succès explicite pour les tests (image peut échouer sans bloquer)
             metric_sse_event(session_id)
             metric_sse_complete(session_id)
+            event_count += 1
             yield f"data: {json.dumps({'step': 'complete', 'success': True})}\n\n"
 
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, GeneratorExit):
+            metric_sse_abort(session_id)
+            aborted = True
+            return
+
         except Exception as e:
-            duration = (
-                time.time() - start_time if 'start_time' in locals() else 0
-            )
-            logger.error(
-                f"Erreur analyse SSE user {request.user.id} après {duration:.2f}s: {e}"
-            )
-            # Sécurité : si un rêve provisoire existe, le supprimer pour ne rien laisser en cas d'échec global
+            duration = time.time() - start_time if 'start_time' in locals() else 0
+            logger.error(f"Erreur analyse SSE user {request.user.id} après {duration:.2f}s: {e}")
             try:
                 if 'dream' in locals() and dream is not None:
                     dream.delete()
             except Exception:
                 pass
             metric_sse_abort(session_id)
+            aborted = True
             yield f"data: {json.dumps({'step': 'error', 'message': DREAM_ERROR_MESSAGE})}\n\n"
+
+        finally:
+            try:
+                if dream is not None:
+                    record_dream_trace(
+                        dream_id=dream.id,
+                        user_id=request.user.id,
+                        created_at_ts=float(dream.created_at.timestamp()) if dream.created_at else time.time(),
+                        dream_type=dream.dream_type if dream.dream_type else "",
+                        dominant_emotion=dream.dominant_emotion or "",
+                        has_image=bool(getattr(dream, "image_url", None)),
+                        total_duration_ms=int((time.time() - start_time) * 1000),
+                        started_at_ts=float(start_time),
+                        transcribe_ms=step_times.get('transcribe_end', 0) and int((step_times['transcribe_end'] - step_times['transcribe_start']) * 1000),
+                        emotion_ms=step_times.get('emotion_end', 0) and int((step_times['emotion_end'] - step_times['emotion_start']) * 1000),
+                        image_ms=step_times.get('image_end', 0) and int((step_times['image_end'] - step_times['image_start']) * 1000),
+                        interpretation_ms=step_times.get('interpretation_end', 0) and int((step_times['interpretation_end'] - step_times['interpretation_start']) * 1000),
+                        sse_completed=not aborted,
+                        sse_aborted=aborted,
+                        sse_event_count=event_count   # <-- ajout
+                    )
+            except Exception as e:
+                logger.debug(f"Échec record_dream_trace: {e}")
+
 
     response = StreamingHttpResponse(
         event_stream(), content_type='text/event-stream'
     )
     response['Cache-Control'] = 'no-cache'
     return response
-
-
-def _safe_cleanup_dream(dream, reason="erreur"):
-    """
-    Supprime un rêve en toute sécurité avec logging approprié.
-    Fonction utilitaire pour éviter les try/except/pass.
-    """
-    if dream is None:
-        return
-
-    try:
-        dream_id = dream.id
-        dream.delete()
-        logger.info(f"Rêve {dream_id} supprimé après {reason}")
-    except Dream.ProtectedError as e:
-        logger.error(f"Impossible de supprimer le rêve (contraintes FK): {e}")
-    except Exception as e:
-        logger.error(f"Erreur inattendue lors de suppression du rêve: {e}")
 
 
 @login_required

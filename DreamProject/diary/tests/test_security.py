@@ -9,7 +9,7 @@ from django.test import TestCase, Client
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 
-import tempfile
+from unittest.mock import patch
 import re
 import os
 
@@ -206,11 +206,18 @@ class SecurityTests(TestCase):
         self.assertIn("Autre analyse", content)
 
         print(" Champ interprétation protégé contre XSS")
-
-    def test_theme_analysis_xss_protection(self):
+        
+    @patch('diary.utils.analyze_themes_with_mistral')
+    def test_theme_analysis_xss_protection(self, mock_themes):
         """
         Test protection contre XSS dans l'analyse thématique.
         """
+        # Mock pour éviter l'appel API et contrôler le retour
+        mock_themes.return_value = [
+            ("Vol dans le ciel", 5),  # Thème nettoyé sans balises HTML
+            ("Rêves d'évasion", 2)
+        ]
+        
         # Créer des rêves avec contenu potentiellement malveillant
         malicious_dreams = [
             "<script>alert('XSS')</script> Je volais dans le ciel",
@@ -246,10 +253,17 @@ class SecurityTests(TestCase):
         for tag in dangerous_tags:
             self.assertNotIn(tag, theme.lower())
 
-    def test_theme_analysis_sql_injection_protection(self):
+    @patch('diary.utils.analyze_themes_with_mistral')
+    def test_theme_analysis_sql_injection_protection(self, mock_themes):
         """
         Test protection contre injection SQL via contenu des rêves.
         """
+        # Mock pour éviter l'appel API et retourner un résultat sûr
+        mock_themes.return_value = [
+            ("Rêves étranges", 4),
+            ("Situations oniriques", 2)
+        ]
+        
         sql_injections = [
             "'; DROP TABLE diary_dream; --",
             "UNION SELECT * FROM auth_user",
@@ -271,3 +285,12 @@ class SecurityTests(TestCase):
         # Vérifier que les données sont intactes
         dream_count = Dream.objects.filter(user=self.user).count()
         self.assertEqual(dream_count, 4)
+        
+        # Vérifier que le mock a été appelé
+        mock_themes.assert_called_once()
+        
+        # Vérifier que le résultat ne contient pas d'injection
+        theme = result['top_theme']
+        sql_keywords = ['DROP', 'UNION', 'SELECT', 'DELETE']
+        for keyword in sql_keywords:
+            self.assertNotIn(keyword, theme.upper())

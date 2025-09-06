@@ -3,7 +3,7 @@ from django.views.decorators.http import require_GET
 from django.contrib.admin.views.decorators import staff_member_required
 from datetime import datetime, timezone
 
-from .runtime import get_snapshot, get_env_info
+from .runtime import get_snapshot, get_env_info, calculate_business_metrics
 
 
 def _iso(ts):
@@ -20,24 +20,25 @@ def _iso(ts):
 @require_GET
 def ai_health_view(request):
     """
-    Endpoint JSON "santé IA" enrichi avec les nouvelles métriques.
-    En DEV/historical: on expose le total de rêves depuis .dev/dev_traces.jsonl.
-    En PROD/Pré-prod (session): on expose le total de rêves de la session, déduit
-    des succès 'mistral.interpretation' (un succès ↔ un rêve complété).
+    Endpoint JSON "santé IA" 100% cohérent.
+    DEV: TOUTES les données depuis JSONL (dev_metrics.jsonl + dev_traces.jsonl)
+    PROD: TOUTES les données depuis la session active
     """
-    snap = get_snapshot()
+    snap = get_snapshot()  # Maintenant 100% cohérent selon l'env
     env = get_env_info()
 
-    # dreams_total :
+    # dreams_total : cohérent avec les données du snapshot
     dreams_total = 0
-    dev_traces = env.get("dev_traces")
-    if env.get("mode") == "historical" and dev_traces:
-        # DEV: total = nombre de rêves considérés (jusqu'aux 100 derniers)
-        dreams_total = dev_traces.get("total", 0)
+    if "_total_dreams" in snap:
+        # DEV: nombre depuis JSONL 
+        dreams_total = snap["_total_dreams"]
     else:
-        # PROD/Pré-prod: total = nb de rêves complétés dans cette session
+        # PROD: depuis session
         interp = snap.get("availability", {}).get("mistral.interpretation", {})
         dreams_total = int(interp.get("ok", 0))
+
+    # Métriques business (maintenant 100% cohérentes avec images incluses)
+    business_metrics = calculate_business_metrics()
 
     data = {
         "environment": env,
@@ -47,11 +48,14 @@ def ai_health_view(request):
         "availability": snap.get("availability"),
         "latency": snap.get("latency"),
         
-        # NOUVELLES MÉTRIQUES PRIORITÉ HAUTE
-        "pipeline_durations": snap.get("pipeline_durations", {}),  # Durées par étape
-        "fallbacks": snap.get("fallbacks", {}),                   # Taux de fallback
-        "retries": snap.get("retries", {}),                       # Stats retry
-        "sse_quality": snap.get("sse_quality", {}),               # Qualité SSE
+        # MÉTRIQUES TECHNIQUES (100% cohérentes selon source)
+        "pipeline_durations": snap.get("pipeline_durations", {}),
+        "fallbacks": snap.get("fallbacks", {}),  # Maintenant avec image incluse
+        "retries": snap.get("retries", {}),
+        "sse_quality": snap.get("sse_quality", {}),
+        
+        # MÉTRIQUES BUSINESS (100% cohérentes avec images incluses)
+        "business_metrics": business_metrics,
         
         "errors": snap.get("errors"),
         "totals": snap.get("totals"),
