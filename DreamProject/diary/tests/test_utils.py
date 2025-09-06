@@ -405,14 +405,12 @@ class StatisticsAndProfilingTest(TestCase):
         self.assertEqual(stats['emotion_dominante'], "émotion endormie")
         self.assertEqual(stats['emotion_dominante_percentage'], 0)
         
-    def test_get_profil_onirique_stats_single_dream(self, mock_themes):
+    def test_get_profil_onirique_stats_single_dream(self):
         """
         Test des statistiques avec un seul rêve.
 
         Objectif : Vérifier les calculs avec données minimales
         """
-        # Mock pour l'analyse thématique (même avec 1 rêve, la fonction est appelée)
-        mock_themes.return_value = None  # Pas assez de rêves pour l'analyse
         
         Dream.objects.create(
             user=self.user,
