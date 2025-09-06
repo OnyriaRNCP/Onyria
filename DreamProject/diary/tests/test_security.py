@@ -206,7 +206,8 @@ class SecurityTests(TestCase):
         self.assertIn("Autre analyse", content)
 
         print(" Champ interprétation protégé contre XSS")
-
+        
+    @patch('diary.utils.analyze_themes_with_mistral')
     def test_theme_analysis_xss_protection(self):
         """
         Test protection contre XSS dans l'analyse thématique.
@@ -245,7 +246,8 @@ class SecurityTests(TestCase):
         ]
         for tag in dangerous_tags:
             self.assertNotIn(tag, theme.lower())
-
+            
+    @patch('diary.utils.analyze_themes_with_mistral')
     def test_theme_analysis_sql_injection_protection(self):
         """
         Test protection contre injection SQL via contenu des rêves.

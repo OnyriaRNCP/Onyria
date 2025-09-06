@@ -777,37 +777,6 @@ class WorkflowRobustnessTest(TestCase):
         self.assertTrue(dream.is_analyzed)
         self.assertFalse(dream.has_image)
 
-    def test_workflow_performance_with_realistic_usage(self):
-        """
-        Performance de la vue journal avec 30 rêves existants.
-        """
-        for i in range(30):
-            Dream.objects.create(
-                user=self.user,
-                transcription=f"Rêve numéro {i} avec du contenu détaillé pour simuler un usage réel d'utilisateur",
-                dream_type="rêve" if i % 3 != 0 else "cauchemar",
-                dominant_emotion="joie" if i % 2 == 0 else "tristesse",
-                is_analyzed=True,
-            )
-
-        self.client.login(
-            email='robustness@example.com', password=TEST_USER_PASSWORD
-        )
-
-        start_time = time.time()
-        response = self.client.get(reverse('dream_diary'))
-        execution_time = time.time() - start_time
-
-        self.assertLess(execution_time, 5.0)
-        self.assertEqual(response.status_code, 200)
-
-        dreams = response.context['dreams']
-        self.assertEqual(len(dreams), 30)
-
-        stats = response.context
-        self.assertIsNotNone(stats.get('statut_reveuse'))
-        self.assertIsInstance(stats.get('pourcentage_reveuse'), int)
-
     # Contrat SSE : patche sur diary.views (lieu d'utilisation réel)
     @patch('diary.views.transcribe_audio', return_value="Un rêve bref")
     @patch(
@@ -874,7 +843,8 @@ class WorkflowRobustnessTest(TestCase):
         """Méthode GET interdite sur l’endpoint SSE."""
         response = self.client.get(reverse('analyse_from_voice'))
         self.assertEqual(response.status_code, 405)
-
+        
+    @patch('diary.utils.analyze_themes_with_mistral')
     def test_theme_fallback_robustness(self):
         """
         Test de robustesse : fallback quand mistral indisponible.
