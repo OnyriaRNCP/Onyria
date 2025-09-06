@@ -845,10 +845,16 @@ class WorkflowRobustnessTest(TestCase):
         self.assertEqual(response.status_code, 405)
         
     @patch('diary.utils.analyze_themes_with_mistral')
-    def test_theme_fallback_robustness(self):
+    def test_theme_fallback_robustness(self, mock_themes):
         """
         Test de robustesse : fallback quand mistral indisponible.
         """
+        # Mock qui simule un succès de fallback
+        mock_themes.return_value = [
+            ("Vol et exploration", 5),
+            ("Liberté et espace", 3)
+        ]
+        
         # Créer des rêves pour tester le fallback
         for i in range(8):
             Dream.objects.create(
@@ -861,3 +867,12 @@ class WorkflowRobustnessTest(TestCase):
 
         self.assertIsInstance(result, dict)
         self.assertEqual(result['total_dreams'], 8)
+        self.assertIn('top_theme', result)
+        self.assertIn('percentage', result)
+        
+        # Vérifier que le mock a été appelé
+        mock_themes.assert_called_once()
+        
+        # Vérifier que les données mockées sont utilisées
+        self.assertEqual(result['top_theme'], 'Vol et exploration')
+        self.assertGreater(result['percentage'], 0)
