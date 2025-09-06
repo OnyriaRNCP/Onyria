@@ -73,8 +73,8 @@ jobs:
         continue-on-error: true
         run: |
           echo "Vérification des dépendances avec Safety..."
-          safety status --json --output safety-report.json || true
-          safety status
+          safety check --json --output safety-report.json || true
+          safety check
       
       - name: Run All Tests with Coverage
         working-directory: DreamProject
