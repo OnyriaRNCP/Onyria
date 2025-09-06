@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import math
 import time
 import tempfile
@@ -16,16 +17,16 @@ from django.conf import settings
 from dotenv import load_dotenv
 from groq import Groq
 from mistralai import Mistral
-from .metrics.runtime import (
-    metric_ok,
-    metric_fail,
-    metric_fallback,
-    metric_retry,
-)
+from .metrics.runtime import metric_ok, metric_fail, metric_fallback, metric_retry
 from collections import Counter, defaultdict
 from .models import Dream
 from typing import Any, Mapping, Optional
-from .constants import EMOTION_LABELS, DREAM_TYPE_LABELS
+from .constants import (
+    EMOTION_LABELS,
+    DREAM_TYPE_LABELS,
+    THEME_CATEGORIES,
+    DREAM_SPECIFIC_STOPWORDS,
+)
 
 # Chargement des variables d'environnement
 load_dotenv()
@@ -56,15 +57,88 @@ mistral_client = (
     else None
 )
 
-# ---------- FONCTIONS UTILITAIRES ----------
+#Config pour analyse thématique
+_nlp_cache = {}
+_bertopic_cache = {}
 
+def get_nlp_model():
+    """Cache le modèle spaCy pour éviter de le recharger"""
+    if 'nlp' not in _nlp_cache:
+        try:
+            import spacy
+            _nlp_cache['nlp'] = spacy.load("fr_core_news_sm")
+        except OSError:
+            logger.warning("Modèle spaCy français non trouvé")
+            _nlp_cache['nlp'] = None
+    return _nlp_cache['nlp']
+
+def get_nltk_tools():
+    """Import et initialisation différés de NLTK"""
+    if 'stemmer' not in _nlp_cache:
+        try:
+            import nltk
+            from nltk.corpus import stopwords
+            from nltk.stem import SnowballStemmer
+            
+            nltk.download('stopwords', quiet=True)
+            _nlp_cache['french_stopwords'] = set(stopwords.words('french'))
+            _nlp_cache['stemmer'] = SnowballStemmer('french')
+        except ImportError:
+            logger.warning("NLTK non disponible")
+            _nlp_cache['french_stopwords'] = set()
+            _nlp_cache['stemmer'] = None
+    
+    return _nlp_cache.get('french_stopwords', set()), _nlp_cache.get('stemmer')
+
+def get_bertopic_model():
+    """Import et configuration différés de BERTopic - VERSION SIMPLIFIÉE SANS SentenceTransformer"""
+    if 'bertopic' not in _bertopic_cache:
+        try:
+            from bertopic import BERTopic
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.decomposition import PCA
+            from sklearn.cluster import KMeans
+            
+            # Configuration simplifiée : utiliser TF-IDF + PCA + KMeans au lieu de SentenceTransformer + UMAP + HDBSCAN
+            
+            # Vectorizer TF-IDF (plus léger que SentenceTransformer)
+            vectorizer_model = TfidfVectorizer(
+                ngram_range=(1, 2),
+                max_features=100,  # Limiter les features
+                min_df=1,
+                max_df=0.8,
+                stop_words=None  # On gère les stopwords dans le preprocessing
+            )
+            
+            # PCA pour réduction dimensionnelle (remplace UMAP)
+            dimensionality_model = PCA(n_components=5, random_state=42)
+            
+            # KMeans pour clustering (remplace HDBSCAN)
+            cluster_model = KMeans(n_clusters=3, random_state=42, n_init=10)
+            
+            _bertopic_cache['bertopic'] = BERTopic(
+                vectorizer_model=vectorizer_model,
+                umap_model=dimensionality_model,  # BERTopic accepte PCA à la place d'UMAP
+                hdbscan_model=cluster_model,      # BERTopic accepte KMeans à la place d'HDBSCAN
+                min_topic_size=2,
+                nr_topics=3,  # Fixer le nombre de topics
+                verbose=False,
+            )
+            _bertopic_cache['available'] = True
+            
+        except ImportError as e:
+            logger.warning(f"BERTopic simplifié non disponible: {e}")
+            _bertopic_cache['bertopic'] = None
+            _bertopic_cache['available'] = False
+    
+    return _bertopic_cache['bertopic'], _bertopic_cache['available']
+# ---------- FONCTIONS UTILITAIRES ----------
 
 def read_file(file_path):
     """Lit un fichier depuis /prompt avec encodage UTF-8"""
     path = os.path.join(BASE_DIR, "diary", "prompt", file_path)
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
-
 
 def softmax(preds):
     """Applique softmax à un dictionnaire de prédictions"""
@@ -74,7 +148,6 @@ def softmax(preds):
     exp = {k: math.exp(v - m) for k, v in preds.items()}
     total = sum(exp.values()) or 1.0
     return {k: v / total for k, v in exp.items()}
-
 
 def validate_and_fix_interpretation(interpretation_data):
     """
@@ -132,7 +205,6 @@ def validate_and_fix_interpretation(interpretation_data):
     logger.debug("Validation interprétation terminée avec succès")
     return fixed_interpretation
 
-
 # ---------- SYSTÈME DE RETRY ----------
 
 
@@ -155,7 +227,6 @@ def _is_retryable_transcription_error(err: Exception) -> bool:
         "429",
     ]
     return any(k in msg for k in keywords)
-
 
 def _transcribe_via_httpx(file_path: str, language: str = "fr") -> str | None:
     """
@@ -205,9 +276,7 @@ def _transcribe_via_httpx(file_path: str, language: str = "fr") -> str | None:
         logger.error(f"HTTPX fallback échec: {e}")
         return None
 
-
 # ---------- TRANSCRIPTION ----------
-
 
 def validate_transcription_length(transcription):
     """
@@ -427,7 +496,6 @@ def transcribe_audio(audio_data, language="fr"):
                     f"Impossible de supprimer le fichier temporaire: {e}"
                 )
 
-
 # ---------- SYSTÈME DE FALLBACK ----------
 
 # Concrétisation paramétrable depuis settings.AI_CONFIG (DRY, pas de doublon)
@@ -435,12 +503,9 @@ try:
     RETRYABLE_STATUS = set(AI_CONFIG['RETRYABLE_STATUS'])
     RETRYABLE_KEYWORDS = tuple(AI_CONFIG['RETRYABLE_KEYWORDS'])
 except KeyError as e:
-    logger.error(
-        f"AI_CONFIG manquant: {e}. Règles de retry vides par sécurité."
-    )
+    logger.error(f"AI_CONFIG manquant: {e}. Règles de retry vides par sécurité.")
     RETRYABLE_STATUS = set()
     RETRYABLE_KEYWORDS = tuple()
-
 
 def _extract_status_and_text(e: Exception):
     status = getattr(e, "status_code", None)
@@ -453,7 +518,6 @@ def _extract_status_and_text(e: Exception):
         except Exception:
             body_text = ""
     return status, body_text
-
 
 def safe_mistral_call(model, messages, operation="API call"):
     """
@@ -468,9 +532,7 @@ def safe_mistral_call(model, messages, operation="API call"):
         Response de l'API ou None si tous les fallbacks échouent
     """
     if mistral_client is None:
-        logger.error(
-            f"[{operation}] Client Mistral non initialisé - MISTRAL_API_KEY manquante"
-        )
+        logger.error(f"[{operation}] Client Mistral non initialisé - MISTRAL_API_KEY manquante")
         return None
 
     logger.info(f"[{operation}] Démarrage avec {model}")
@@ -486,10 +548,10 @@ def safe_mistral_call(model, messages, operation="API call"):
     for attempt, current_model in enumerate(models_to_try):
         try:
             attempt_start = time.time()
-
+            
             # Enregistrer tentative de fallback
             metric_fallback("mistral", operation_key, attempt + 1)
-
+            
             response = mistral_client.chat.complete(
                 model=current_model,
                 messages=messages,
@@ -498,25 +560,17 @@ def safe_mistral_call(model, messages, operation="API call"):
             attempt_duration = time.time() - attempt_start
 
             if attempt > 0:
-                logger.warning(
-                    f"[{operation}] Fallback utilisé: {current_model} en {attempt_duration:.2f}s"
-                )
+                logger.warning(f"[{operation}] Fallback utilisé: {current_model} en {attempt_duration:.2f}s")
             else:
-                logger.info(
-                    f"[{operation}] Succès avec {current_model} en {attempt_duration:.2f}s"
-                )
-
+                logger.info(f"[{operation}] Succès avec {current_model} en {attempt_duration:.2f}s")
+            
             # Alerte sur performance dégradée
             if attempt_duration > 10:
-                logger.warning(
-                    f"[{operation}] Performance dégradée: {attempt_duration:.2f}s"
-                )
+                logger.warning(f"[{operation}] Performance dégradée: {attempt_duration:.2f}s")
 
             # Enregistrer retry stats si il y en a eu
             if total_backoff_ms > 0:
-                metric_retry(
-                    "mistral", operation_key, attempt, total_backoff_ms
-                )
+                metric_retry("mistral", operation_key, attempt, total_backoff_ms)
 
             return response
 
@@ -529,73 +583,53 @@ def safe_mistral_call(model, messages, operation="API call"):
             merged_msg = (error_msg + " " + body_text.lower()).strip()
 
             retryable = (
-                (status_code in RETRYABLE_STATUS)
-                or any(k in merged_msg for k in RETRYABLE_KEYWORDS)
-                or any(
-                    k in merged_msg
-                    for k in [
-                        "insufficient_quota",
-                        "quota_exceeded",
-                        "rate_limit",
-                        "model_not_found",
-                        "service_unavailable",
-                        "timeout",
-                    ]
-                )
+                (status_code in RETRYABLE_STATUS) or
+                any(k in merged_msg for k in RETRYABLE_KEYWORDS) or
+                any(k in merged_msg for k in [
+                    "insufficient_quota",
+                    "quota_exceeded",
+                    "rate_limit",
+                    "model_not_found",
+                    "service_unavailable",
+                    "timeout",
+                ])
             )
 
             if retryable:
                 base = AI_CONFIG.get('CHAT_RETRY_BASE_DELAY_S', 0.5)
                 maxd = AI_CONFIG.get('CHAT_RETRY_MAX_DELAY_S', 3.0)
-                wait = min(base * (2**attempt), maxd) + random.uniform(0, 0.3)
+                wait = min(base * (2 ** attempt), maxd) + random.uniform(0, 0.3)
                 wait_ms = int(wait * 1000)
-
+                
                 # Accumuler backoff
                 total_backoff_ms += wait_ms
 
                 if "quota" in merged_msg:
-                    logger.warning(
-                        f"[{operation}] QUOTA ATTEINT - {current_model}"
-                    )
+                    logger.warning(f"[{operation}] QUOTA ATTEINT - {current_model}")
                 elif "rate_limit" in merged_msg or status_code == 429:
-                    logger.warning(
-                        f"[{operation}] RATE LIMIT - {current_model}"
-                    )
+                    logger.warning(f"[{operation}] RATE LIMIT - {current_model}")
                 else:
-                    logger.warning(
-                        f"[{operation}] Erreur {current_model}: {e}"
-                    )
+                    logger.warning(f"[{operation}] Erreur {current_model}: {e}")
 
                 if attempt == len(models_to_try) - 1:
                     total_duration = time.time() - start_time
-                    logger.error(
-                        f"[{operation}] Tous les fallbacks échoués après {total_duration:.2f}s"
-                    )
-
+                    logger.error(f"[{operation}] Tous les fallbacks échoués après {total_duration:.2f}s")
+                    
                     # NOUVEAU: Enregistrer retry stats finales même en cas d'échec
                     if total_backoff_ms > 0:
-                        metric_retry(
-                            "mistral",
-                            operation_key,
-                            len(models_to_try),
-                            total_backoff_ms,
-                        )
-
+                        metric_retry("mistral", operation_key, len(models_to_try), total_backoff_ms)
+                    
                     return None
 
                 time.sleep(wait)
                 continue
             else:
-                logger.error(
-                    f"[{operation}] Erreur critique {current_model}: {e}"
-                )
+                logger.error(f"[{operation}] Erreur critique {current_model}: {e}")
                 raise e
 
     return None
 
-
 # ---------- ANALYSE D'ÉMOTIONS ----------
-
 
 def analyze_emotions(text):
     """Renvoie le score des émotions + l'émotion dominante avec fallback"""
@@ -618,15 +652,8 @@ def analyze_emotions(text):
     )
 
     if response is None:
-        metric_fail(
-            "mistral",
-            "emotion",
-            int((time.time() - op_start) * 1000),
-            reason="unavailable",
-        )
-        logger.error(
-            "Échec analyse émotionnelle - tous les modèles indisponibles"
-        )
+        metric_fail("mistral", "emotion", int((time.time() - op_start) * 1000), reason="unavailable")
+        logger.error("Échec analyse émotionnelle - tous les modèles indisponibles")
         return None, None
 
     try:
@@ -638,25 +665,13 @@ def analyze_emotions(text):
             try:
                 raw = dict(raw)
             except Exception:
-                logger.error(
-                    f"Format inattendu des émotions (liste non convertible): {raw}"
-                )
-                metric_fail(
-                    "mistral",
-                    "emotion",
-                    int((time.time() - op_start) * 1000),
-                    reason="bad_format",
-                )
+                logger.error(f"Format inattendu des émotions (liste non convertible): {raw}")
+                metric_fail("mistral", "emotion", int((time.time() - op_start) * 1000), reason="bad_format")
                 return None, None
 
         if not isinstance(raw, dict):
             logger.error(f"Format inattendu des émotions (type={type(raw)})")
-            metric_fail(
-                "mistral",
-                "emotion",
-                int((time.time() - op_start) * 1000),
-                reason="bad_format",
-            )
+            metric_fail("mistral", "emotion", int((time.time() - op_start) * 1000), reason="bad_format")
             return None, None
 
         # Cast des valeurs non numériques
@@ -669,12 +684,7 @@ def analyze_emotions(text):
 
         if not cleaned:
             logger.error("Aucun score exploitable reçu")
-            metric_fail(
-                "mistral",
-                "emotion",
-                int((time.time() - op_start) * 1000),
-                reason="empty",
-            )
+            metric_fail("mistral", "emotion", int((time.time() - op_start) * 1000), reason="empty")
             return None, None
 
         scores = softmax(cleaned)
@@ -688,14 +698,8 @@ def analyze_emotions(text):
 
     except (json.JSONDecodeError, KeyError) as e:
         logger.error(f"Erreur parsing émotions: {e}")
-        metric_fail(
-            "mistral",
-            "emotion",
-            int((time.time() - op_start) * 1000),
-            reason="bad_json",
-        )
+        metric_fail("mistral", "emotion", int((time.time() - op_start) * 1000), reason="bad_json")
         return None, None
-
 
 def classify_dream(emotions):
     """Détermine si le rêve est un cauchemar ou non"""
@@ -720,9 +724,7 @@ def classify_dream(emotions):
 
     return classification
 
-
 # ---------- INTERPRÉTATION ----------
-
 
 def interpret_dream(text):
     """Demande à Mistral une interprétation du rêve avec fallback et validation"""
@@ -742,12 +744,7 @@ def interpret_dream(text):
     )
 
     if response is None:
-        metric_fail(
-            "mistral",
-            "interpretation",
-            int((time.time() - op_start) * 1000),
-            reason="unavailable",
-        )
+        metric_fail("mistral", "interpretation", int((time.time() - op_start) * 1000), reason="unavailable")
         logger.error("Échec interprétation - tous les modèles indisponibles")
         return None
 
@@ -761,36 +758,20 @@ def interpret_dream(text):
         )
 
         if validated_interpretation:
-            metric_ok(
-                "mistral",
-                "interpretation",
-                int((time.time() - op_start) * 1000),
-            )
+            metric_ok("mistral", "interpretation", int((time.time() - op_start) * 1000))
             logger.info("Interprétation générée avec succès")
             return validated_interpretation
         else:
-            metric_fail(
-                "mistral",
-                "interpretation",
-                int((time.time() - op_start) * 1000),
-                reason="validation_failed",
-            )
+            metric_fail("mistral", "interpretation", int((time.time() - op_start) * 1000), reason="validation_failed")
             logger.error("Échec validation interprétation")
             return None
 
     except (json.JSONDecodeError, KeyError) as e:
         logger.error(f"Erreur parsing interprétation: {e}")
-        metric_fail(
-            "mistral",
-            "interpretation",
-            int((time.time() - op_start) * 1000),
-            reason="bad_json",
-        )
+        metric_fail("mistral", "interpretation", int((time.time() - op_start) * 1000), reason="bad_json")
         return None
 
-
 # ---------- GÉNÉRATION D'IMAGES ----------
-
 
 def generate_image_from_text(user, prompt_text, dream_instance):
     """
@@ -798,9 +779,7 @@ def generate_image_from_text(user, prompt_text, dream_instance):
     Stocke l'image en base64 dans le modèle Dream.
     """
     if mistral_client is None:
-        logger.error(
-            f"Génération image impossible - MISTRAL_API_KEY manquante"
-        )
+        logger.error(f"Génération image impossible - MISTRAL_API_KEY manquante")
         metric_fail("mistral", "image", 0, reason="no_api_key")
         return False
 
@@ -835,12 +814,7 @@ def generate_image_from_text(user, prompt_text, dream_instance):
             )
 
             if not file_id:
-                metric_fail(
-                    "mistral",
-                    "image",
-                    int((time.time() - start_time) * 1000),
-                    reason="no_file",
-                )
+                metric_fail("mistral", "image", int((time.time() - start_time) * 1000), reason="no_file")
                 logger.warning("Aucune image générée par l'agent")
                 return False
 
@@ -857,187 +831,316 @@ def generate_image_from_text(user, prompt_text, dream_instance):
 
         except Exception as e:
             error_msg = str(e).lower()
-            reason = None
-
+            reason = "error"
             if "insufficient_quota" in error_msg or "quota" in error_msg:
                 logger.warning(f"Quota image atteint: {e}")
                 reason = "quota"
-            elif (
-                "rate_limit" in error_msg
-                or "too many requests" in error_msg
-                or "429" in error_msg
-            ):
+            elif "rate_limit" in error_msg or "too many requests" in error_msg:
                 logger.warning(f"Rate limit image: {e}")
                 reason = "rate_limit"
             else:
                 logger.error(f"Erreur image: {e}")
-                # fallback: raison brute (tronquée pour éviter un pavé énorme en JSONL)
-                reason = error_msg[:200] if error_msg else "error"
 
-            metric_fail(
-                "mistral",
-                "image",
-                int((time.time() - start_time) * 1000),
-                reason=reason,
-            )
+            metric_fail("mistral", "image", int((time.time() - start_time) * 1000), reason=reason)
             return False
 
     except Exception as e:
         duration = time.time() - start_time
         logger.error(f"Erreur génération image après {duration:.2f}s: {e}")
-        metric_fail(
-            "mistral", "image", int(duration * 1000), reason="exception"
-        )
+        metric_fail("mistral", "image", int(duration * 1000), reason="exception")
         return False
 
 
-# ---------- ANALYSE THÉMATIQUE MISTRAL ----------
+# ---------- THEMATIQUE ----------
 
 
-def analyze_themes_with_mistral(dream_texts: List[str], total_dreams: int):
-    """
-    Analyse thématique basée sur Mistral au lieu de BERTopic/catégories
+def _preprocess_for_analysis(text: str) -> str:
+    """Préprocesse le texte avec spaCy pour analyse thématique - version améliorée"""
+    # Import différé des outils NLP
+    nlp = get_nlp_model()
+    french_stopwords, stemmer = get_nltk_tools()
+    
+    if not nlp or not text:
+        return _basic_preprocess(text, french_stopwords, stemmer)
 
-    Args:
-        dream_texts: Liste des transcriptions de rêves
-        total_dreams: Nombre total de rêves
+    text = text.lower()
+    # ✅ AMÉLIORATION : Préserver plus de ponctuation contextuelle
+    text = re.sub(r'[^\w\s\'-]', ' ', text)  # Garder apostrophes et tirets
 
-    Returns:
-        List[tuple]: Liste de (nom_theme, occurrences) ou None en cas d'échec
-    """
-    if total_dreams < 2:
-        logger.info("Pas assez de rêves pour analyse thématique Mistral")
+    doc = nlp(text)
+    significant_tokens = []
+
+    for token in doc:
+        lemma = token.lemma_.lower()
+        original = token.text.lower()
+
+        # ✅ AMÉLIORATION : Critères de sélection plus inclusifs
+        keep_token = False
+        
+        # Noms et noms propres (priorité)
+        if token.pos_ in ['NOUN', 'PROPN']:
+            keep_token = True
+            
+        # Verbes d'action significatifs (liste étendue)
+        elif token.pos_ == 'VERB' and lemma in [
+            'aller', 'venir', 'partir', 'arriver', 'entrer', 'sortir', 'monter', 'descendre',
+            'voler', 'tomber', 'courir', 'fuir', 'nager', 'marcher', 'conduire', 'voyager',
+            'manger', 'boire', 'dormir', 'rêver', 'jouer', 'travailler', 'étudier', 'apprendre',
+            'rencontrer', 'voir', 'regarder', 'écouter', 'parler', 'dire', 'crier', 'pleurer',
+            'rire', 'aimer', 'détester', 'avoir', 'être', 'faire', 'pouvoir', 'vouloir'
+        ]:
+            keep_token = True
+            
+        # Adjectifs descriptifs importants
+        elif token.pos_ == 'ADJ' and len(lemma) >= 4:
+            keep_token = True
+            
+        # Prépositions et adverbes de lieu/temps utiles
+        elif token.pos_ in ['ADP', 'ADV'] and original in [
+            'chez', 'dans', 'sur', 'sous', 'avec', 'sans', 'pour', 'par', 'vers', 'depuis',
+            'hier', 'aujourd', 'demain', 'maintenant', 'toujours', 'jamais', 'souvent', 'parfois',
+            'ici', 'là', 'partout', 'nulle', 'dehors', 'dedans', 'devant', 'derrière'
+        ]:
+            keep_token = True
+
+        # ✅ FILTRAGE : Conserver seulement les tokens pertinents
+        if keep_token and len(lemma) >= 2:
+            # Utiliser lemma pour la cohérence, mais garder original si plus informatif
+            final_token = lemma
+            
+            # ✅ AMÉLIORATION : Préférer forme originale pour certains cas
+            if (
+                original not in french_stopwords 
+                and original not in DREAM_SPECIFIC_STOPWORDS
+                and not original.isdigit()
+                and token.is_alpha
+                and len(original) >= 3
+            ):
+                # Garder original si différent du lemma et plus expressif
+                if original != lemma and len(original) >= len(lemma):
+                    final_token = original
+                    
+                # Exceptions pour les mots très courts mais importants
+                if len(final_token) >= 2 or final_token in ['je', 'tu', 'il', 'on', 'me', 'te', 'se']:
+                    # Dernière vérification d'exclusion
+                    exclude_patterns = ['fair', 'avoir', 'êtr', 'etr', 'all', 'ven']
+                    if not any(pattern in final_token for pattern in exclude_patterns):
+                        significant_tokens.append(final_token)
+
+    # ✅ AMÉLIORATION : Déduplication intelligente en gardant la forme la plus informative
+    unique_tokens = []
+    seen_roots = set()
+    
+    for token in significant_tokens:
+        # Créer une forme "racine" pour éviter les doublons proches
+        root = token[:4] if len(token) > 4 else token
+        
+        if root not in seen_roots or len(token) > 4:  # Préférer formes longues
+            unique_tokens.append(token)
+            seen_roots.add(root)
+
+    return ' '.join(unique_tokens)
+
+
+def _basic_preprocess(text: str, french_stopwords=None, stemmer=None) -> str:
+    """Préprocessing basique sans spaCy - version améliorée"""
+    if not text:
+        return ""
+
+    # Import différé si pas fourni
+    if french_stopwords is None or stemmer is None:
+        french_stopwords, stemmer = get_nltk_tools()
+
+    text = text.lower()
+    text = re.sub(r'[^\w\s\'-]', ' ', text)  # Garder apostrophes et tirets
+    tokens = text.split()
+
+    filtered = []
+    for token in tokens:
+        # ✅ AMÉLIORATION : Critères plus permissifs pour conserver plus de contexte
+        if (
+            len(token) >= 3  # Réduire le minimum de 4 à 3 caractères
+            and token not in french_stopwords
+            and token not in DREAM_SPECIFIC_STOPWORDS
+            and not token.isdigit()
+            and token.isalpha()
+            # Exclusions spécifiques pour éviter les mots parasites
+            and token not in ['avoir', 'être', 'etre', 'faire', 'aller', 'venir', 'dire', 'voir']
+        ):
+            filtered.append(token)
+
+    return ' '.join(filtered)
+
+
+def _bertopic_analysis(dream_texts: List[str], total_dreams: int):
+    """Analyse BERTopic pour datasets moyens/grands (8+ rêves)"""
+    # Utiliser le modèle BERTopic déjà configuré
+    bertopic_model, bertopic_available = get_bertopic_model()
+    
+    if not bertopic_available or total_dreams < 8:
         return None
 
-    logger.info(f"Analyse thématique Mistral - {total_dreams} rêves")
+    # Préprocesser les textes
+    preprocessed_texts = []
+    for text in dream_texts:
+        cleaned = _preprocess_for_analysis(text)
+        if len(cleaned.strip()) > 10:
+            preprocessed_texts.append(cleaned)
 
-    # Préparer le prompt avec tous les rêves
-    reves_numerotes = []
-    for i, text in enumerate(dream_texts, 1):
-        # Nettoyer et limiter la taille de chaque rêve
-        clean_text = text.strip()[:500]  # Limiter à 500 chars par rêve
-        reves_numerotes.append(f"Rêve {i}: {clean_text}")
-
-    prompt_content = "\n\n".join(reves_numerotes)
-
-    system_prompt = read_file("context_themes.txt")
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": prompt_content},
-    ]
-
-    op_start = time.time()
-    response = safe_mistral_call(
-        model=AI_CONFIG['THEMES_MODEL'],  # Nouveau modèle dans config
-        messages=messages,
-        operation="Analyse thématique",
-    )
-
-    if response is None:
-        metric_fail(
-            "mistral",
-            "themes",
-            int((time.time() - op_start) * 1000),
-            reason="unavailable",
-        )
-        logger.error(
-            "Échec analyse thématique - tous les modèles indisponibles"
-        )
+    if len(preprocessed_texts) < 5:
+        logger.info("Pas assez de textes valides pour BERTopic, fallback")
         return None
 
     try:
-        raw_themes = json.loads(response.choices[0].message.content)
+        # Utiliser directement le modèle configuré
+        topics, probabilities = bertopic_model.fit_transform(preprocessed_texts)
 
-        # Validation du format
-        if not isinstance(raw_themes, dict) or "themes" not in raw_themes:
-            logger.error(f"Format thématique invalide: {raw_themes}")
-            metric_fail(
-                "mistral",
-                "themes",
-                int((time.time() - op_start) * 1000),
-                reason="bad_format",
-            )
+        # Analyser les résultats
+        topic_info = bertopic_model.get_topic_info()
+        valid_topics = topic_info[topic_info.Topic != -1]
+
+        if len(valid_topics) == 0:
             return None
 
-        themes_list = raw_themes["themes"]
-        if not isinstance(themes_list, list):
-            logger.error("Format themes non-liste")
-            metric_fail(
-                "mistral",
-                "themes",
-                int((time.time() - op_start) * 1000),
-                reason="bad_format",
-            )
-            return None
+        # Extraire les thèmes
+        theme_results = []
+        topic_counts = Counter(topics)
 
-        # Convertir en format attendu et valider
-        validated_themes = []
-        for theme_data in themes_list:
-            if not isinstance(theme_data, dict):
-                continue
+        for topic_id, count in topic_counts.items():
+            if topic_id != -1 and count >= 2:
+                topic_words = bertopic_model.get_topic(topic_id)
+                if topic_words:
+                    # Prendre les 2-3 mots les plus représentatifs
+                    top_words = [
+                        word for word, score in topic_words[:3] if score > 0.1
+                    ]
+                    if top_words:
+                        theme_name = ' & '.join(
+                            top_words[:2]
+                        )  # Maximum 2 mots
+                        theme_results.append((theme_name, count))
 
-            nom = theme_data.get("nom", "").strip()
-            occurrences = theme_data.get("occurrences", 0)
+        return sorted(theme_results, key=lambda x: x[1], reverse=True)
 
-            # Validation des critères
-            if (
-                nom
-                and isinstance(occurrences, int)
-                and occurrences >= 2  # Minimum 2 occurrences
-                and occurrences
-                <= total_dreams  # Pas plus que le total de rêves
-            ):
-                validated_themes.append((nom, occurrences))
-
-        if not validated_themes:
-            logger.warning("Aucun thème valide trouvé")
-            metric_fail(
-                "mistral",
-                "themes",
-                int((time.time() - op_start) * 1000),
-                reason="no_valid_themes",
-            )
-            return None
-
-        # Trier par occurrences décroissantes
-        validated_themes.sort(key=lambda x: x[1], reverse=True)
-
-        duration = time.time() - op_start
-        metric_ok("mistral", "themes", int(duration * 1000))
-
-        logger.info(
-            f"Analyse thématique Mistral réussie: {len(validated_themes)} thèmes en {duration:.2f}s"
-        )
-        logger.debug(f"Thèmes trouvés: {[t[0] for t in validated_themes]}")
-
-        return validated_themes
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
-        logger.error(f"Erreur parsing thèmes: {e}")
-        metric_fail(
-            "mistral",
-            "themes",
-            int((time.time() - op_start) * 1000),
-            reason="bad_json",
-        )
+    except Exception as e:
+        logger.error(f"Erreur BERTopic: {e}")
         return None
 
 
-def get_themes_stats_filtered(
-    user, period=None, start_date=None, end_date=None
-):
-    """
-    Version refactorisée utilisant Mistral pour l'analyse thématique
-    """
-    logger.info(
-        f"Analyse thématiques filtrées user {user.id} - period: {period}"
-    )
+def _category_analysis(dream_texts: List[str], total_dreams: int):
+    """Analyse par catégories prédéfinies pour petits datasets - version améliorée"""
+    # Import différé des outils NLTK
+    french_stopwords, stemmer = get_nltk_tools()
+    
+    theme_document_freq = Counter()
+    theme_word_freq = Counter()  # Pour compter la fréquence totale des mots
 
-    dreams_queryset = get_date_filter_queryset(
-        user, period, start_date, end_date
-    )
-    dreams = dreams_queryset.filter(transcription__isnull=False).exclude(
-        transcription=""
-    )
+    for dream_text in dream_texts:
+        words = _preprocess_for_analysis(dream_text).split()
+
+        # Détecter les catégories présentes dans ce rêve
+        detected_categories = set()
+        category_word_count = defaultdict(int)
+
+        for category, keywords in THEME_CATEGORIES.items():
+            for word in words:
+                for keyword in keywords:
+                    match_found = False
+                    
+                    # Différents niveaux de matching
+                    if word == keyword:
+                        match_found = True
+                    elif len(word) >= 4 and len(keyword) >= 4:
+                        # Matching partiel pour mots longs
+                        if keyword in word or word in keyword:
+                            match_found = True
+                        # Stemming si disponible
+                        elif stemmer and stemmer.stem(word) == stemmer.stem(keyword):
+                            match_found = True
+                    
+                    if match_found:
+                        detected_categories.add(category)
+                        category_word_count[category] += 1
+                        theme_word_freq[category] += 1
+                        break
+
+        # Compter chaque catégorie une fois par rêve (pour document frequency)
+        for category in detected_categories:
+            theme_document_freq[category] += 1
+
+    # AMÉLIORATION : Stratégie adaptative selon le volume de données
+    if total_dreams <= 3:
+        # Pour très peu de rêves, utiliser la fréquence des mots
+        recurring_themes = [
+            (theme, freq)
+            for theme, freq in theme_word_freq.items()
+            if freq >= 1  # Au moins 1 occurrence
+        ]
+        logger.debug(f"Petit dataset ({total_dreams} rêves): utilisation fréquence mots")
+    elif total_dreams <= 6:
+        # Dataset moyen : mix entre document frequency et word frequency
+        recurring_themes = []
+        for theme in set(list(theme_document_freq.keys()) + list(theme_word_freq.keys())):
+            doc_freq = theme_document_freq.get(theme, 0)
+            word_freq = theme_word_freq.get(theme, 0)
+            
+            # Score hybride : privilégier document frequency mais accepter word frequency élevée
+            if doc_freq >= 2:
+                score = doc_freq
+            elif word_freq >= 2:
+                score = 1  # Score minimal mais valide
+            else:
+                continue
+                
+            recurring_themes.append((theme, score))
+        logger.debug(f"Dataset moyen ({total_dreams} rêves): utilisation score hybride")
+    else:
+        # Dataset plus grand : utiliser document frequency classique
+        recurring_themes = [
+            (theme, count)
+            for theme, count in theme_document_freq.items()
+            if count >= 2
+        ]
+        logger.debug(f"Grand dataset ({total_dreams} rêves): utilisation document frequency")
+
+    # FALLBACK : Si aucun thème trouvé, analyse plus basique
+    if not recurring_themes and dream_texts:
+        logger.debug("Aucun thème catégorisé trouvé, analyse basique des mots fréquents")
+        
+        # Analyser les mots les plus fréquents de tous les rêves
+        all_text = " ".join(dream_texts).lower()
+        words = _preprocess_for_analysis(all_text).split()
+        
+        if words:
+            word_counts = Counter(words)
+            # Prendre les mots qui apparaissent au moins dans un rêve
+            min_freq = max(1, total_dreams // 3) if total_dreams > 3 else 1
+            
+            basic_themes = [
+                (word, count)
+                for word, count in word_counts.most_common(10)
+                if count >= min_freq and len(word) >= 4 and word not in ['reve', 'rever', 'fait', 'suis', 'dans', 'avec', 'tout', 'tres', 'bien', 'comme', 'puis', 'alors']
+            ]
+            
+            if basic_themes:
+                recurring_themes = basic_themes[:5]  # Max 5 thèmes basiques
+                logger.debug(f"Thèmes basiques trouvés: {[t[0] for t in recurring_themes]}")
+
+    result = sorted(recurring_themes, key=lambda x: x[1], reverse=True)
+    logger.debug(f"Analyse catégorique: {len(result)} thèmes pour {total_dreams} rêves")
+    
+    return result
+
+
+def get_themes_stats_filtered(user, period=None, start_date=None, end_date=None):
+    """
+    Analyse les thématiques récurrentes pour une période donnée
+    Utilise la même logique qu'analyze_recurring_themes pour la cohérence
+    """
+    logger.info(f"Analyse thématiques filtrées user {user.id} - period: {period}")
+
+    dreams_queryset = get_date_filter_queryset(user, period, start_date, end_date)
+    dreams = dreams_queryset.filter(transcription__isnull=False).exclude(transcription="")
 
     dream_texts = list(dreams.values_list('transcription', flat=True))
     total_dreams = len(dream_texts)
@@ -1051,8 +1154,14 @@ def get_themes_stats_filtered(
             'message': f'Au moins 2 rêves nécessaires pour détecter des thématiques',
         }
 
-    # ✅ NOUVEAU: Utiliser uniquement Mistral pour l'analyse thématique
-    themes_results = analyze_themes_with_mistral(dream_texts, total_dreams)
+    # ✅ UTILISER LA MÊME LOGIQUE qu'analyze_recurring_themes
+    bertopic_model, bertopic_available = get_bertopic_model()
+    if total_dreams >= 8 and bertopic_available:
+        themes_results = _bertopic_analysis(dream_texts, total_dreams)
+        method = "BERTopic"
+    else:
+        themes_results = _category_analysis(dream_texts, total_dreams)
+        method = "Catégories"
 
     if not themes_results:
         return {
@@ -1078,34 +1187,28 @@ def get_themes_stats_filtered(
         'percentage': round((themes_results[0][1] / total_dreams) * 100, 1),
     }
 
-    logger.info(
-        f"Thématiques analysées (Mistral): {len(themes_results)} trouvées"
-    )
+    logger.info(f"Thématiques analysées ({method}): {len(themes_results)} trouvées")
 
     return {
         'themes': themes_dict,
         'total_dreams': total_dreams,
         'top_theme': top_theme,
         'has_data': True,
-        'method': "Mistral IA",
-        'themes_list': [
-            theme_name.capitalize() for theme_name, _ in themes_results
-        ],
+        'method': method,
+        # ✅ NOUVEAU : Retourner les thèmes bruts pour réutilisation
+        'themes_list': [theme_name.capitalize() for theme_name, _ in themes_results],
         'raw_themes_results': themes_results,
     }
 
 
-def get_themes_timeline_filtered(
-    user, period=None, start_date=None, end_date=None
-):
+def get_themes_timeline_filtered(user, period=None, start_date=None, end_date=None):
     """
-    Version refactorisée pour la timeline thématique avec Mistral
+    Analyse l'évolution des thématiques dans le temps
+    NOUVELLE VERSION : Utilise les mêmes thèmes que get_themes_stats_filtered
     """
     logger.info(f"Timeline thématiques user {user.id}")
 
-    dreams_queryset = get_date_filter_queryset(
-        user, period, start_date, end_date
-    )
+    dreams_queryset = get_date_filter_queryset(user, period, start_date, end_date)
     dreams = (
         dreams_queryset.filter(transcription__isnull=False)
         .exclude(transcription="")
@@ -1115,26 +1218,24 @@ def get_themes_timeline_filtered(
     if dreams.count() < 2:
         return [], []
 
-    # ✅ ÉTAPE 1 : Obtenir les thèmes globaux de la période
-    global_themes_analysis = get_themes_stats_filtered(
-        user, period, start_date, end_date
-    )
-
+    # ✅ ÉTAPE 1 : Obtenir les thèmes globaux de la période (cohérence garantie)
+    global_themes_analysis = get_themes_stats_filtered(user, period, start_date, end_date)
+    
     if not global_themes_analysis['has_data']:
         return [], []
-
+    
     # Récupérer la liste des thèmes à suivre dans la timeline
-    themes_to_track = global_themes_analysis['themes_list'][
-        :8
-    ]  # Max 8 thèmes pour lisibilité
-
+    themes_to_track = global_themes_analysis['themes_list'][:10]  # Max 10 thèmes pour lisibilité
+    
     logger.info(f"Thèmes à suivre dans timeline: {themes_to_track}")
 
     # ✅ ÉTAPE 2 : Grouper les rêves par période temporelle
     if period in ['month', '3months']:
+        # Groupement par semaine pour périodes courtes
         date_format = '%Y-W%U'
         display_format = lambda d: f"Sem {d.strftime('%U')}"
     else:
+        # Groupement par mois pour périodes longues
         date_format = '%Y-%m'
         display_format = lambda d: d.strftime('%m/%Y')
 
@@ -1143,20 +1244,28 @@ def get_themes_timeline_filtered(
         period_key = dream.created_at.strftime(date_format)
         dreams_by_period[period_key].append(dream.transcription)
 
-    # ✅ ÉTAPE 3 : Pour chaque période, analyser avec Mistral
+    # ✅ ÉTAPE 3 : Pour chaque période, compter SEULEMENT les thèmes prédéfinis
     timeline_data = []
 
     for period_key in sorted(dreams_by_period.keys()):
         texts = dreams_by_period[period_key]
-        period_data = {'period': period_key, 'total_dreams': len(texts)}
-
+        period_data = {
+            'period': period_key, 
+            'total_dreams': len(texts)
+        }
+        
         # Initialiser tous les thèmes à 0
         for theme in themes_to_track:
             period_data[theme] = 0
 
-        # ✅ Analyser cette période avec Mistral si assez de rêves
-        if len(texts) >= 2:
-            period_themes = analyze_themes_with_mistral(texts, len(texts))
+        # ✅ COMPTER SEULEMENT les thèmes qui correspondent à notre liste globale
+        if len(texts) >= 1:
+            # Utiliser la même méthode d'analyse que pour les stats globales
+            bertopic_model, bertopic_available = get_bertopic_model()
+            if len(texts) >= 8 and bertopic_available:
+                period_themes = _bertopic_analysis(texts, len(texts))
+            else:
+                period_themes = _category_analysis(texts, len(texts))
 
             # Mapper les résultats aux thèmes globaux
             if period_themes:
@@ -1164,107 +1273,24 @@ def get_themes_timeline_filtered(
                     theme_clean = theme_name.capitalize()
                     if theme_clean in themes_to_track:
                         period_data[theme_clean] = count
-                        logger.debug(
-                            f"Période {period_key}: {theme_clean} = {count}"
-                        )
-        else:
-            # Période avec un seul rêve : recherche de mots-clés simple
-            period_text = " ".join(texts).lower()
-            for theme in themes_to_track:
-                # Recherche basique de mots-clés associés au thème
-                theme_keywords = _get_theme_keywords(theme.lower())
-                matches = sum(
-                    1 for keyword in theme_keywords if keyword in period_text
-                )
-                if matches > 0:
-                    period_data[theme] = 1  # Présence détectée
+                        logger.debug(f"Période {period_key}: {theme_clean} = {count}")
 
         timeline_data.append(period_data)
 
-    logger.info(
-        f"Timeline thématiques: {len(timeline_data)} périodes pour {len(themes_to_track)} thèmes"
-    )
-
+    logger.info(f"Timeline thématiques: {len(timeline_data)} périodes pour {len(themes_to_track)} thèmes")
+    
     return timeline_data, themes_to_track
-
-
-def _get_theme_keywords(theme_name: str) -> List[str]:
-    """
-    Retourne des mots-clés associés à un thème pour la recherche simple
-    Fallback quand on a trop peu de rêves pour une analyse Mistral complète
-    """
-    theme_keywords = {
-        'famille': [
-            'mère',
-            'père',
-            'parent',
-            'frère',
-            'soeur',
-            'enfant',
-            'bébé',
-            'maman',
-            'papa',
-        ],
-        'travail': [
-            'bureau',
-            'travail',
-            'patron',
-            'chef',
-            'collègue',
-            'réunion',
-            'projet',
-        ],
-        'école': [
-            'école',
-            'classe',
-            'professeur',
-            'élève',
-            'cours',
-            'examen',
-            'université',
-        ],
-        'maison': [
-            'maison',
-            'appartement',
-            'chambre',
-            'cuisine',
-            'salon',
-            'porte',
-            'fenêtre',
-        ],
-        'transport': [
-            'voiture',
-            'train',
-            'avion',
-            'bus',
-            'métro',
-            'vélo',
-            'voyage',
-        ],
-        'animaux': ['chien', 'chat', 'oiseau', 'poisson', 'animal'],
-        'eau': ['mer', 'océan', 'piscine', 'rivière', 'lac', 'eau', 'pluie'],
-        'nourriture': [
-            'manger',
-            'repas',
-            'restaurant',
-            'cuisine',
-            'pain',
-            'gâteau',
-        ],
-    }
-
-    return theme_keywords.get(theme_name, [theme_name])
 
 
 def analyze_recurring_themes(user, min_dreams=2, min_occurrence=2):
     """
-    Version mise à jour utilisant Mistral au lieu de l'ancienne méthode
+    MISE À JOUR : Utilise maintenant get_themes_stats_filtered pour éviter la duplication
     """
     logger.info(f"Analyse thématiques récurrentes user {user.id}")
-
-    # Utiliser la fonction harmonisée qui utilise maintenant Mistral
+    
+    # Utiliser la fonction harmonisée qui contient déjà toute la logique
     result = get_themes_stats_filtered(user, period='all')
-
+    
     if not result['has_data']:
         return {
             'top_theme': 'Pas encore de données',
@@ -1272,23 +1298,19 @@ def analyze_recurring_themes(user, min_dreams=2, min_occurrence=2):
             'total_dreams': result['total_dreams'],
             'message': result['message'],
         }
-
+    
     # Reformater pour correspondre à l'ancien format de retour
     top_theme_info = result['top_theme']
-
+    
     return {
         'top_theme': top_theme_info['name'],
         'percentage': top_theme_info['percentage'],
         'total_dreams': result['total_dreams'],
-        'all_themes': [
-            (name, data['count']) for name, data in result['themes'].items()
-        ],
-        'message': f"{len(result['themes'])} thématiques trouvées (Mistral IA)",
+        'all_themes': [(name, data['count']) for name, data in result['themes'].items()],
+        'message': f"{len(result['themes'])} thématiques trouvées ({result['method']})",
     }
 
-
 # ---------- PROFIL ONYRIQUE ----------
-
 
 def get_profil_onirique_stats(user):
     """Calcule les statistiques du profil onirique d'un utilisateur"""
@@ -1349,9 +1371,7 @@ def get_profil_onirique_stats(user):
         "thematique_percentage": theme_analysis['percentage'],
     }
 
-
 # ---------- DASHBOARD PERSONNEL ----------
-
 
 def get_date_filter_queryset(
     user, period=None, start_date=None, end_date=None
@@ -1401,7 +1421,6 @@ def get_date_filter_queryset(
 
     return queryset
 
-
 def get_dream_type_stats_filtered(
     user, period=None, start_date=None, end_date=None
 ):
@@ -1427,7 +1446,6 @@ def get_dream_type_stats_filtered(
         'counts': {'rêve': nb_reves, 'cauchemar': nb_cauchemars},
         'total': total,
     }
-
 
 def get_dream_type_timeline_filtered(
     user, period=None, start_date=None, end_date=None
@@ -1462,7 +1480,6 @@ def get_dream_type_timeline_filtered(
 
     return timeline_list
 
-
 def get_emotions_stats_filtered(
     user, period=None, start_date=None, end_date=None
 ):
@@ -1487,7 +1504,6 @@ def get_emotions_stats_filtered(
         'counts': dict(emotion_counts),
         'total': total,
     }
-
 
 def get_emotions_timeline_filtered(
     user, period=None, start_date=None, end_date=None
@@ -1537,7 +1553,6 @@ def _strip_accents(s: str) -> str:
     s = unicodedata.normalize("NFKD", s)
     return "".join(ch for ch in s if not unicodedata.combining(ch))
 
-
 def _first_value(val: Any) -> Any:
     """
     Prend la 1ère valeur si val est une liste/tuple, sinon renvoie val tel quel.
@@ -1548,7 +1563,6 @@ def _first_value(val: Any) -> Any:
     if isinstance(val, (list, tuple)):
         return _first_value(val[0] if val else "")
     return val
-
 
 def _to_str(val: Any) -> str:
     """
@@ -1571,10 +1585,7 @@ def _to_str(val: Any) -> str:
 _EMO_NORM = {_strip_accents(str(k)): v for k, v in EMOTION_LABELS.items()}
 _DREAM_NORM = {_strip_accents(str(k)): v for k, v in DREAM_TYPE_LABELS.items()}
 
-
-def _normalize_label(
-    val: Any, mapping: Optional[Mapping[str, str]] = None
-) -> str:
+def _normalize_label(val: Any, mapping: Optional[Mapping[str, str]] = None) -> str:
     """
     Normalise un label pour l'affichage/API:
     - Accepte clé brute, liste/tuple (on prend le 1er élément)
@@ -1595,11 +1606,9 @@ def _normalize_label(
         return norm_map.get(_strip_accents(raw), raw.capitalize())
     return raw.capitalize()
 
-
 def format_emotion_label(val: Any) -> str:
     """Ex: 'Joïe', 'joie', 'JOIE', 'joie ' -> 'Joie' (via EMOTION_LABELS si présent)"""
     return _normalize_label(val, EMOTION_LABELS)
-
 
 def format_dream_type_label(val: Any) -> str:
     """Ex: 'CAUCHEMAR', 'cauchemar', 'Cauchemàr' -> 'Cauchemar' (via DREAM_TYPE_LABELS si présent)"""
