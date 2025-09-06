@@ -207,15 +207,11 @@ class SecurityTests(TestCase):
 
         print(" Champ interprétation protégé contre XSS")
         
-    def test_theme_analysis_xss_protection(self, mock_themes):
+    def test_theme_analysis_xss_protection(self):
         """
         Test protection contre XSS dans l'analyse thématique.
         """
         # Mock pour éviter l'appel API et contrôler le retour
-        mock_themes.return_value = [
-            ("Vol dans le ciel", 5),  # Thème nettoyé sans balises HTML
-            ("Rêves d'évasion", 2)
-        ]
         
         # Créer des rêves avec contenu potentiellement malveillant
         malicious_dreams = [
@@ -252,15 +248,11 @@ class SecurityTests(TestCase):
         for tag in dangerous_tags:
             self.assertNotIn(tag, theme.lower())
 
-    def test_theme_analysis_sql_injection_protection(self, mock_themes):
+    def test_theme_analysis_sql_injection_protection(self):
         """
         Test protection contre injection SQL via contenu des rêves.
         """
         # Mock pour éviter l'appel API et retourner un résultat sûr
-        mock_themes.return_value = [
-            ("Rêves étranges", 4),
-            ("Situations oniriques", 2)
-        ]
         
         sql_injections = [
             "'; DROP TABLE diary_dream; --",
@@ -283,9 +275,6 @@ class SecurityTests(TestCase):
         # Vérifier que les données sont intactes
         dream_count = Dream.objects.filter(user=self.user).count()
         self.assertEqual(dream_count, 4)
-        
-        # Vérifier que le mock a été appelé
-        mock_themes.assert_called_once()
         
         # Vérifier que le résultat ne contient pas d'injection
         theme = result['top_theme']

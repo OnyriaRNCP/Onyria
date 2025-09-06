@@ -105,16 +105,12 @@ class DreamDiaryViewTest(TestCase):
         )
         self.assertEqual(response.context['pourcentage_reveuse'], 0)
 
-    def test_dream_diary_view_with_dreams(self, mock_themes):
+    def test_dream_diary_view_with_dreams(self):
         """
         Test de la vue dream_diary avec des rêves existants.
 
         Objectif : Vérifier l'affichage avec données
         """
-        mock_themes.return_value = [
-            ("Thèmes variés", 2),
-            ("Situations quotidiennes", 1)
-        ]
         
         # Créer quelques rêves
         dreams_data = [
@@ -279,11 +275,6 @@ class DreamDiaryViewTest(TestCase):
 
         Objectif : Vérifier que la vue reste rapide même avec beaucoup de données
         """   
-        mock_themes.return_value = [
-            ("Thème principal", 25),
-            ("Thème secondaire", 15),
-            ("Thème tertiaire", 10)
-        ]
         
         # Créer 50 rêves
         dreams_batch = []
@@ -448,11 +439,9 @@ class DreamFollowupViewTest(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn('login', response.url.lower())
 
-    def test_dream_followup_view_default(self, mock_themes):
+    def test_dream_followup_view_default(self):
         """Test de la vue avec paramètres par défaut (toutes les données)"""
-        mock_themes.return_value = [
-            ("Émotions mixtes", 2)
-        ]
+        
         
         self.client.login(email='followup@example.com', password=TEST_USER_PASSWORD)
 
@@ -516,11 +505,9 @@ class DreamFollowupViewTest(TestCase):
             response.context['current_end_date'], end_date.strftime('%Y-%m-%d')
         )
 
-    def test_dream_followup_view_context_completeness(self, mock_themes):
+    def test_dream_followup_view_context_completeness(self):
         """Test de complétude du contexte"""
-        mock_themes.return_value = [
-            ("Contexte de test", 1)
-        ]
+        
         self.client.login(email='followup@example.com', password=TEST_USER_PASSWORD)
 
         response = self.client.get(reverse('dream_followup'))
@@ -557,11 +544,9 @@ class DreamFollowupViewTest(TestCase):
         self.assertEqual(stats['total'], 0)
         
         
-    def test_dream_followup_view_emotions_formatting(self, mock_themes):
+    def test_dream_followup_view_emotions_formatting(self):
         """Test du formatage des émotions dans le contexte"""
-        mock_themes.return_value = [
-            ("Formatage test", 1)
-        ]
+        
         self.client.login(email='followup@example.com', password=TEST_USER_PASSWORD)
 
         response = self.client.get(reverse('dream_followup'))
@@ -604,12 +589,10 @@ class DreamFollowupViewTest(TestCase):
             response.context['date_range_display'],
         )
 
-    def test_dream_followup_view_user_isolation(self, mock_themes):
+    def test_dream_followup_view_user_isolation(self):
         """Test d'isolation des données utilisateur"""
         # Mock pour éviter l'appel API
-        mock_themes.return_value = [
-            ("Isolation test", 2)
-        ]
+        
         # Créer un autre utilisateur avec des rêves
         other_user = User.objects.create_user(
             email='other_followup@example.com',
@@ -636,12 +619,10 @@ class DreamFollowupViewTest(TestCase):
         emotions_stats = response.context['emotions_stats']
         self.assertNotIn('Bonheur', emotions_stats.keys())
 
-    def test_dream_followup_view_template_content(self, mock_themes):
+    def test_dream_followup_view_template_content(self):
         """Test du contenu rendu dans le template"""
         # Mock pour éviter l'appel API
-        mock_themes.return_value = [
-            ("Template test", 1)
-        ]
+        
         """Test du contenu rendu dans le template"""
         self.client.login(email='followup@example.com', password=TEST_USER_PASSWORD)
 
@@ -655,13 +636,8 @@ class DreamFollowupViewTest(TestCase):
         # Si Chart.js est inclus
         self.assertContains(response, 'chart.min.js')
 
-    def test_dream_followup_view_performance(self, mock_themes):
+    def test_dream_followup_view_performance(self):
         """Test de performance de la vue"""
-        # Mock pour éviter l'appel API avec beaucoup de rêves
-        mock_themes.return_value = [
-            ("Performance test", 30),
-            ("Thème secondaire", 20)
-        ]
         # Créer beaucoup de rêves
         batch_dreams = []
         for i in range(50):
