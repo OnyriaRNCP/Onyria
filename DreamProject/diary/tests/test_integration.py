@@ -380,7 +380,6 @@ class MultiUserIsolationTest(TestCase):
         ("Émotions variées", 2)
         ]
         
-        mock_themes.side_effect = mock_themes_response
         # User1 : profil très joyeux
         for i in range(5):
             Dream.objects.create(
