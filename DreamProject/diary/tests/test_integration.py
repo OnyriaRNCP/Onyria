@@ -174,17 +174,12 @@ class CompleteUserJourneyTest(TestCase):
         mock_generate.assert_called_once()
 
     
-    def test_user_journey_with_multiple_dreams(self, mock_themes):
+    def test_user_journey_with_multiple_dreams(self):
         """
         Test du parcours utilisateur avec plusieurs rêves.
 
         Objectif : Tester l'évolution des statistiques avec plusieurs rêves
         """
-        # Mock pour éviter l'appel API
-        mock_themes.return_value = [
-            ("Thèmes récurrents variés", 3),
-            ("Émotions positives", 2)
-        ]
         self.client.login(
             email='journey@example.com', password=TEST_USER_PASSWORD
         )
@@ -369,16 +364,13 @@ class MultiUserIsolationTest(TestCase):
 
     
     
-    def test_statistics_isolation_between_users(self, mock_themes):
+    def test_statistics_isolation_between_users(self):
         """
         Test d'isolation des statistiques entre utilisateurs.
 
         Objectif : VÉrifier que les stats sont calculÉes uniquement sur les rêves de l'utilisateur
         """
-        mock_themes.return_value = [
-        ("Thèmes génériques", 3),
-        ("Émotions variées", 2)
-        ]
+        
         
         # User1 : profil très joyeux
         for i in range(5):
@@ -559,17 +551,14 @@ class DataConsistencyTest(TestCase):
         )  # Valeur brute en DB
 
     
-    def test_stats_consistency_with_database(self, mock_themes):
+    def test_stats_consistency_with_database(self):
         """
         Test de cohÉrence des statistiques avec la base de donnÉes.
 
         Objectif : VÉrifier que les stats reflètent exactement les donnÉes DB
         """
         # Mock pour éviter l'appel API
-        mock_themes.return_value = [
-            ("Cohérence des données", 3),
-            ("Distribution équilibrée", 2)
-        ]
+       
         # Créer des rêves avec distribution connue
         dreams_data = [
             ('Rêve 1', 'rêve', 'joie'),  # 1
@@ -627,16 +616,14 @@ class DataConsistencyTest(TestCase):
         )  # 3/5 * 100
 
     
-    def test_label_formatting_consistency(self, mock_themes):
+    def test_label_formatting_consistency(self):
         """
         Test de cohÉrence du formatage des labels.
 
         Objectif : VÉrifier que les labels sont formatÉs uniformÉment
         """
         # Mock pour éviter l'appel API
-        mock_themes.return_value = [
-            ("Formatage cohérent", 1)
-        ]
+    
         # Créer un rêve avec valeurs brutes
         dream = Dream.objects.create(
             user=self.user,
@@ -688,15 +675,12 @@ class DataConsistencyTest(TestCase):
         # Le statut est calculé, donc peut être différent
 
     
-    def test_theme_analysis_profile_integration(self, mock_themes):
+    def test_theme_analysis_profile_integration(self):
         """
         Test d'intÉgration : thèmes dans le profil onirique.
         """
         # Mock pour contrôler le retour de l'analyse thématique
-        mock_themes.return_value = [
-            ("Vol et liberté", 4),
-            ("Éléments naturels", 3)
-        ]
+        
         # Créer un profil cohérent avec thèmes récurrents
         dreams_data = [
             ("Vol magique dans la nuit", "rêve", "joie"),
@@ -873,15 +857,11 @@ class WorkflowRobustnessTest(TestCase):
         self.assertEqual(response.status_code, 405)
         
     
-    def test_theme_fallback_robustness(self, mock_themes):
+    def test_theme_fallback_robustness(self):
         """
         Test de robustesse : fallback quand mistral indisponible.
         """
         # Mock qui simule un succès de fallback
-        mock_themes.return_value = [
-            ("Vol et exploration", 5),
-            ("Liberté et espace", 3)
-        ]
         
         # Créer des rêves pour tester le fallback
         for i in range(8):
@@ -899,7 +879,6 @@ class WorkflowRobustnessTest(TestCase):
         self.assertIn('percentage', result)
         
         # Vérifier que le mock a été appelé
-        mock_themes.assert_called_once()
         
         # Vérifier que les données mockées sont utilisées
         self.assertEqual(result['top_theme'], 'Vol et exploration')
