@@ -54,8 +54,8 @@ MISTRAL_API_KEY=your-mistral-api-key-here
 Le projet est configuré avec 3 environnements :
 
 - **Dev** (branche principale) : Développement local avec `.env`
-- **Pre-prod** : Environnement de test sur Render
-- **Prod** : Environnement de production sur Render
+- **pre-production** : Environnement de test sur Render
+- **Production** : Environnement de production sur Render
 
 **Important** : Ne jamais committer le fichier `.env` ! Il est déjà dans `.gitignore`.
 
@@ -192,25 +192,25 @@ python manage.py test accounts.tests.test_core
 - **Tests à chaque push** : Vérifications rapides + formatage Black
 - **Tests quotidiens** : Suite complète avec couverture de code
 - **Tests hebdomadaires** : Tests complets + audit sécurité (Bandit, Safety)
-- **Protection des branches** : Workflow dev → pre-production → production
+- **Protection des branches** : Workflow Dev → pre-production → Production
 
 ## Workflow de déploiement
 
 ### Environnements
 
-1. **dev** (branche principale) → Développement local
+1. **Dev** (branche principale) → Développement local
 2. **pre-production** → Environnement de test sur Render  
-3. **production** → Environnement de production sur Render
+3. **Production** → Environnement de production sur Render
 
 ### Règles de merge
 
-- `dev` → `pre-production` uniquement
-- `pre-production` → `production` uniquement
+- `Dev` → `pre-production` uniquement
+- `pre-production` → `Production` uniquement
 - Protection automatique via GitHub Actions
 
 ## Déploiement
 
-En production, l'application est servie avec Gunicorn et le CSS Tailwind doit être compilé avant le lancement.
+En production, l'application est servie avec Gunicorn (mode ASGI via UvicornWorker) et le CSS Tailwind doit être compilé avant le lancement.
 
 ### Exemple
 
@@ -220,9 +220,9 @@ npm ci --include=dev
 npm run build:css
 python manage.py migrate
 python manage.py collectstatic --noinput
-gunicorn Onyria.wsgi:application --chdir DreamProject
+gunicorn Onyria.asgi:application -k uvicorn.workers.UvicornWorker --chdir DreamProject --bind 0.0.0.0:$PORT
 ```
---> Gunicorn exécute l'application Django en production.
+--> Gunicorn (avec UvicornWorker) exécute l'application Django en mode ASGI, ce qui permet de gérer correctement les connexions longues (ex. SSE).
 
 --> WhiteNoise permet de servir directement les fichiers statiques, sans avoir besoin d'un serveur web externe (NGINX, Apache…).
 

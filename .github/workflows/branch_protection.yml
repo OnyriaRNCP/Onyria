@@ -1,7 +1,7 @@
 name: Branch Protection
 on:
   pull_request:
-    branches: [pre-production, production]
+    branches: [pre-production, Production]
 
 jobs:
   check-source-branch:
@@ -10,21 +10,21 @@ jobs:
       - name: Check pre-production source
         if: github.base_ref == 'pre-production'
         run: |
-          if [ "${{ github.head_ref }}" != "dev" ]; then
-            echo "pre-production ne peut recevoir du code que de dev"
+          if [ "${{ github.head_ref }}" != "Dev" ]; then
+            echo "pre-production ne peut recevoir du code que de Dev"
             echo "Branche source détectée: ${{ github.head_ref }}"
-            echo "Branche source autorisée: dev"
+            echo "Branche source autorisée: Dev"
             exit 1
           fi
-          echo "Source branch valide pour pre-production (dev → pre-production)"
+          echo "Source branch valide pour pre-production (Dev → pre-production)"
       
       - name: Check production source  
-        if: github.base_ref == 'production'
+        if: github.base_ref == 'Production'
         run: |
           if [ "${{ github.head_ref }}" != "pre-production" ]; then
-            echo "production ne peut recevoir du code que de pre-production"
+            echo "Production ne peut recevoir du code que de pre-production"
             echo "Branche source détectée: ${{ github.head_ref }}"
             echo "Branche source autorisée: pre-production"
             exit 1
           fi
-          echo "Source branch valide pour production (pre-production → production)"
+          echo "Source branch valide pour Production (pre-production → Production)"
