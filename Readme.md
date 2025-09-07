@@ -210,7 +210,7 @@ python manage.py test accounts.tests.test_core
 
 ## Déploiement
 
-En production, l'application est servie avec Gunicorn (mode ASGI via UvicornWorker) et le CSS Tailwind doit être compilé avant le lancement.
+En production, l'application est servie avec Gunicorn et le CSS Tailwind doit être compilé avant le lancement.
 
 ### Exemple
 
@@ -220,9 +220,9 @@ npm ci --include=dev
 npm run build:css
 python manage.py migrate
 python manage.py collectstatic --noinput
-gunicorn Onyria.asgi:application -k uvicorn.workers.UvicornWorker --chdir DreamProject --bind 0.0.0.0:$PORT
+gunicorn Onyria.wsgi:application --chdir DreamProject
 ```
---> Gunicorn (avec UvicornWorker) exécute l'application Django en mode ASGI, ce qui permet de gérer correctement les connexions longues (ex. SSE).
+--> Gunicorn exécute l'application Django en production.
 
 --> WhiteNoise permet de servir directement les fichiers statiques, sans avoir besoin d'un serveur web externe (NGINX, Apache…).
 
