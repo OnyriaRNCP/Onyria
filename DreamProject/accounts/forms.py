@@ -1,6 +1,7 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm, PasswordChangeForm
 from .models import CustomUser
+from datetime import date
 
 class RegisterForm(UserCreationForm):
     email = forms.EmailField(
@@ -11,37 +12,46 @@ class RegisterForm(UserCreationForm):
         label="Nom d'utilisateur",
         widget=forms.TextInput(attrs={'placeholder': 'Écrivez votre nom d\'utilisateur'})
     )
-    age = forms.IntegerField(
-        label="Âge",
-        min_value=13,
-        max_value=120,
-        required=False,
-        widget=forms.NumberInput(attrs={'placeholder': 'Écrivez votre âge'})
+
+    date_of_birth = forms.DateField(
+        label="Date de naissance",
+        required=True,
+        widget=forms.DateInput(attrs={
+            'type': 'date',
+            'placeholder': 'AAAA-MM-JJ'
+        })
     )
+
     sexe = forms.ChoiceField(
         label="Sexe",
         choices=[('', 'Sélectionnez votre sexe')] + CustomUser.GENDER_CHOICES,
         required=False,
-        widget=forms.Select(attrs={'style': 'color: var(--gray-400);'})
     )
+
     password1 = forms.CharField(
-        label="Mot de passe", 
+        label="Mot de passe",
         widget=forms.PasswordInput(attrs={'placeholder': 'Écrivez votre mot de passe'})
     )
     password2 = forms.CharField(
-        label="Confirmation du mot de passe", 
+        label="Confirmation du mot de passe",
         widget=forms.PasswordInput(attrs={'placeholder': 'Confirmez votre mot de passe'})
     )
 
     class Meta:
         model = CustomUser
-        fields = ('email', 'username', 'age', 'sexe', 'password1', 'password2')
+        fields = ('email', 'username', 'date_of_birth', 'sexe', 'password1', 'password2')
 
-    def clean_age(self):
-        age = self.cleaned_data.get('age')
-        if age and age < 13:
-            raise forms.ValidationError("L'âge minimum requis est de 13 ans.")
-        return age
+    def clean_date_of_birth(self):
+        dob = self.cleaned_data['date_of_birth']
+        today = date.today()
+        if dob > today:
+            raise forms.ValidationError("La date de naissance ne peut pas être dans le futur.")
+        years = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        if years < 13:
+            raise forms.ValidationError("L'inscription est réservée aux personnes de 13 ans et plus.")
+        if years > 120:
+            raise forms.ValidationError("Merci de vérifier votre date de naissance.")
+        return dob
 
 
 class LoginForm(forms.Form):

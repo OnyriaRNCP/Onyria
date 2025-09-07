@@ -8,10 +8,17 @@ Usage: python manage.py test diary.tests.test_security
 from django.test import TestCase, Client
 from django.contrib.auth import get_user_model
 from django.urls import reverse
-import tempfile
+
+from unittest.mock import patch
 import re
+import os
+
+from ..models import Dream
+from ..utils import analyze_recurring_themes
 
 User = get_user_model()
+
+TEST_USER_PASSWORD = os.environ.get('TEST_PASSWORD', 'django_test_secure_2024')
 
 
 class SecurityTests(TestCase):
@@ -19,13 +26,15 @@ class SecurityTests(TestCase):
         self.user = User.objects.create_user(
             email='security@test.com',
             username='secuser',
-            password='testpass123',
+            password=TEST_USER_PASSWORD,
         )
         self.client = Client()
 
     def test_sql_injection_protection(self):
         """Test protection contre l'injection SQL"""
-        self.client.login(email='security@test.com', password='testpass123')
+        self.client.login(
+            email='security@test.com', password=TEST_USER_PASSWORD
+        )
 
         # Tentative d'injection dans les paramètres
         malicious_data = "'; DROP TABLE diary_dream; --"
@@ -45,7 +54,9 @@ class SecurityTests(TestCase):
         """
         from ..models import Dream
 
-        self.client.login(email='security@test.com', password='testpass123')
+        self.client.login(
+            email='security@test.com', password=TEST_USER_PASSWORD
+        )
 
         #  PAYLOAD MALVEILLANT SPÉCIFIQUE
         malicious_content = "<script>alert('XSS Attack!')</script>"
@@ -126,7 +137,7 @@ class SecurityTests(TestCase):
         other_user = User.objects.create_user(
             email='other@test.com',
             username='otheruser',
-            password='testpass123',
+            password=TEST_USER_PASSWORD,
         )
 
         from ..models import Dream
@@ -135,7 +146,9 @@ class SecurityTests(TestCase):
             user=other_user, transcription="Rêve privé de l'autre utilisateur"
         )
 
-        self.client.login(email='security@test.com', password='testpass123')
+        self.client.login(
+            email='security@test.com', password=TEST_USER_PASSWORD
+        )
 
         # Tentative d'accès direct par ID
         response = self.client.get(f'/diary/dream/{other_dream.id}/')
@@ -149,7 +162,9 @@ class SecurityTests(TestCase):
         """
         from ..models import Dream
 
-        self.client.login(email='security@test.com', password='testpass123')
+        self.client.login(
+            email='security@test.com', password=TEST_USER_PASSWORD
+        )
 
         # Créer un rêve avec interprétation malveillante
         dream = Dream.objects.create(
@@ -191,3 +206,91 @@ class SecurityTests(TestCase):
         self.assertIn("Autre analyse", content)
 
         print(" Champ interprétation protégé contre XSS")
+        
+    @patch('diary.utils.analyze_themes_with_mistral')
+    def test_theme_analysis_xss_protection(self, mock_themes):
+        """
+        Test protection contre XSS dans l'analyse thématique.
+        """
+        # Mock pour éviter l'appel API et contrôler le retour
+        mock_themes.return_value = [
+            ("Vol dans le ciel", 5),  # Thème nettoyé sans balises HTML
+            ("Rêves d'évasion", 2)
+        ]
+        
+        # Créer des rêves avec contenu potentiellement malveillant
+        malicious_dreams = [
+            "<script>alert('XSS')</script> Je volais dans le ciel",
+            "J'ai rêvé de <img src=x onerror=alert('hack')> voler",
+            "Dans mon rêve javascript:alert('test') je volais",
+            "Je volais <iframe src='evil.com'></iframe> dans l'espace",
+            "Vol dans le ciel avec <object data='malware'></object>",
+        ]
+
+        for text in malicious_dreams:
+            Dream.objects.create(
+                user=self.user,
+                transcription=text,
+                dream_type="rêve",
+                dominant_emotion="joie",
+            )
+
+        # L'analyse ne doit pas planter et doit nettoyer le contenu
+        result = analyze_recurring_themes(self.user)
+
+        self.assertIsInstance(result, dict)
+        self.assertIn('top_theme', result)
+
+        # Le thème ne doit pas contenir de balises HTML
+        theme = result['top_theme']
+        dangerous_tags = [
+            '<script',
+            '<img',
+            '<iframe',
+            '<object',
+            'javascript:',
+        ]
+        for tag in dangerous_tags:
+            self.assertNotIn(tag, theme.lower())
+
+    @patch('diary.utils.analyze_themes_with_mistral')
+    def test_theme_analysis_sql_injection_protection(self, mock_themes):
+        """
+        Test protection contre injection SQL via contenu des rêves.
+        """
+        # Mock pour éviter l'appel API et retourner un résultat sûr
+        mock_themes.return_value = [
+            ("Rêves étranges", 4),
+            ("Situations oniriques", 2)
+        ]
+        
+        sql_injections = [
+            "'; DROP TABLE diary_dream; --",
+            "UNION SELECT * FROM auth_user",
+            "' OR '1'='1' --",
+            "); DELETE FROM django_session; --",
+        ]
+
+        for injection in sql_injections:
+            Dream.objects.create(
+                user=self.user,
+                transcription=f"Je rêvais de {injection} et puis je volais",
+                dream_type="rêve",
+            )
+
+        # L'analyse doit fonctionner sans corrompre la DB
+        result = analyze_recurring_themes(self.user)
+        self.assertIsInstance(result, dict)
+
+        # Vérifier que les données sont intactes
+        dream_count = Dream.objects.filter(user=self.user).count()
+        self.assertEqual(dream_count, 4)
+        
+        # Vérifier que le mock a été appelé
+        mock_themes.assert_called_once()
+        
+        # Vérifier que le résultat ne contient pas d'injection
+        theme = result['top_theme']
+        sql_keywords = ['DROP', 'UNION', 'SELECT', 'DELETE']
+        for keyword in sql_keywords:
+            self.assertNotIn(keyword, theme.upper())

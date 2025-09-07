@@ -291,30 +291,46 @@
         break;
       
       case 'image':
-      imageRevee.innerHTML = "";
-      
-      const img = document.createElement("img");
-      
-      if (data.data.image_path) {
-        img.src = data.data.image_path;
-        img.alt = "Image du rêve";
-      } else {
-        img.src = "{% static 'img/placeholder.png' %}";
-        img.alt = "Image non disponible";
-      }
-      
-      img.className = "pastel-image w-full aspect-[4/3] object-cover mx-auto";
-      img.onerror = function() {
-        console.error('Erreur chargement image');
-        this.style.display = 'none';
-      };
-      
-      imageRevee.appendChild(img);
-      sectionImage.style.display = "block";
-      break;
+        imageRevee.innerHTML = "";
+        const img = document.createElement("img");
+        img.className = "pastel-image w-full aspect-[4/3] object-cover mx-auto";
+        
+        // Gestion d'erreur de chargement cohérente avec le système global
+        img.onerror = function() {
+          console.error('Erreur chargement image:', this.src);
+          
+          // Si c'est déjà le placeholder qui échoue → ÉCHEC GLOBAL
+          if (this.src.includes('placeholder.png')) {
+            console.error('Placeholder image également inaccessible - échec système');
+            handleModelFailure("{{ DREAM_ERROR_MESSAGE|escapejs }}");
+          } else {
+            // Sinon, fallback vers le placeholder
+            this.src = "{% static 'img/placeholder.png' %}";
+            this.alt = "Image non disponible";
+          }
+        };
+        
+        // Logique principale : image générée OU placeholder
+        if (data.data.image_path && data.data.image_path.trim() !== '') {
+          // Image générée avec succès
+          img.src = data.data.image_path;
+          img.alt = "Image du rêve générée par IA";
+        } else {
+          // Pas d'image générée → placeholder direct
+          img.src = "{% static 'img/placeholder.png' %}";
+          img.alt = "Image non disponible";
+        }
+        
+        imageRevee.appendChild(img);
+        sectionImage.style.display = "block";
+        break;
 
       case 'complete':
         sawComplete = true; // succès confirmé
+        break;
+
+       case 'too_short':
+        handleTooShortTranscription(data.message);
         break;
       
       case 'error':
@@ -324,35 +340,67 @@
     }
   }
 
-  // ===== GESTION D'ÉCHEC MODÈLE (unique UI) =====
-  function handleModelFailure(message) {
+  // ===== GESTION DE TRANSCRIPTION TROP COURTE =====
+
+  function handleTooShortTranscription(message) {
     hadError = true;
 
-    // Afficher uniquement le message générique
-    showStatus(message);
+    // Afficher le message spécifique avec style différent
+    status.innerHTML = `
+      <div style="background-color: #fef3c7; border: 1px solid #d97706; color: #92400e; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
+        <p style="margin: 0; font-weight: 600;">📝 ${message}</p>
+        <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem; opacity: 0.8;">
+          Conseil : Décrivez les personnages, lieux, actions et émotions de votre rêve.
+        </p>
+      </div>
+    `;
+    status.style.display = "block";
 
-    // Cacher absolument tout le reste
-    recordBtn.style.display = "none";
-    const title = document.querySelector("h1");
-    if (title) title.style.display = "none";
-    sectionTranscription.style.display = "none";
-    sectionEmotionDream.style.display = "none";
-    sectionInterpretation.style.display = "none";
-    sectionImage.style.display = "none";
-    sectionDisclaimer.classList.add("hidden");
-    const nav = document.getElementById("sectionNavigation");
-    if (nav) nav.style.display = "none";
-
-    // Stop états visuels
+    // Remettre le bouton en état initial (permettre nouvel enregistrement)
     recordBtn.classList.remove("processing");
     loadingIcon.classList.add("hidden");
     micIcon.classList.remove("hidden");
+    recordBtn.style.display = "block";
 
-    // Rechargement automatique après quelques secondes
-    setTimeout(() => {
-      window.location.reload();
-    }, 3500);
+    // Cacher le titre temporairement puis le remettre
+    const title = document.querySelector("h1");
+    if (title) {
+      title.style.opacity = "0.5";
+      setTimeout(() => {
+        title.style.opacity = "1";
+      }, 2000);
+    }
+
+    // ===== GESTION D'ÉCHEC MODÈLE (unique UI) =====
+    function handleModelFailure(message) {
+      hadError = true;
+
+      // Afficher uniquement le message générique
+      showStatus(message);
+
+      // Cacher absolument tout le reste
+      recordBtn.style.display = "none";
+      const title = document.querySelector("h1");
+      if (title) title.style.display = "none";
+      sectionTranscription.style.display = "none";
+      sectionEmotionDream.style.display = "none";
+      sectionInterpretation.style.display = "none";
+      sectionImage.style.display = "none";
+      sectionDisclaimer.classList.add("hidden");
+      const nav = document.getElementById("sectionNavigation");
+      if (nav) nav.style.display = "none";
+
+      // Stop états visuels
+      recordBtn.classList.remove("processing");
+      loadingIcon.classList.add("hidden");
+      micIcon.classList.remove("hidden");
+
+      // Rechargement automatique après quelques secondes
+      setTimeout(() => {
+        window.location.reload();
+      }, 3500);
   }
+}
 
   // ===== FONCTIONS UTILITAIRES =====
   function showStatus(message) {
