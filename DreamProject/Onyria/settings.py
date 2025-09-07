@@ -160,7 +160,7 @@ else:
     }
 
 # Validation de mot de passe
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
+# ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS").split(" ")
 
 AUTH_PASSWORD_VALIDATORS = [
     {
