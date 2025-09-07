@@ -1,6 +1,5 @@
 import os
 import json
-import sys
 import re
 import math
 import time
@@ -8,13 +7,10 @@ import tempfile
 import logging
 import httpx
 import random
-import nltk
-import spacy
 import unicodedata
-from typing import List, Dict
+from typing import List
 from datetime import datetime, timedelta
 from django.utils import timezone
-from django.core.files.base import ContentFile
 from django.db.models import Count
 from django.db.models.functions import TruncDate
 from django.conf import settings
@@ -22,13 +18,6 @@ from dotenv import load_dotenv
 from groq import Groq
 from mistralai import Mistral
 from .metrics.runtime import metric_ok, metric_fail, metric_fallback, metric_retry
-from nltk.corpus import stopwords
-from nltk.stem import SnowballStemmer
-from bertopic import BERTopic
-from sklearn.feature_extraction.text import CountVectorizer
-from sentence_transformers import SentenceTransformer
-from umap import UMAP
-from hdbscan import HDBSCAN
 from collections import Counter, defaultdict
 from .models import Dream
 from typing import Any, Mapping, Optional
@@ -68,59 +57,80 @@ mistral_client = (
 )
 
 #Config pour analyse thématique
-try:
-    nlp = spacy.load("fr_core_news_sm")
-except OSError:
-    logger.warning(
-        "Modèle spaCy français non trouvé. Installer avec: python -m spacy download fr_core_news_sm"
-    )
-    nlp = None
+_nlp_cache = {}
+_bertopic_cache = {}
 
-try:
-    nltk.download('stopwords', quiet=True)
-    FRENCH_STOPWORDS = set(stopwords.words('french'))
-    stemmer = SnowballStemmer('french')
-except ImportError:
-    logger.warning("NLTK non disponible. Installer avec: pip install nltk")
-    FRENCH_STOPWORDS = set()
-    stemmer = None
+def get_nlp_model():
+    """Cache le modèle spaCy pour éviter de le recharger"""
+    if 'nlp' not in _nlp_cache:
+        try:
+            import spacy
+            _nlp_cache['nlp'] = spacy.load("fr_core_news_sm")
+        except OSError:
+            logger.warning("Modèle spaCy français non trouvé")
+            _nlp_cache['nlp'] = None
+    return _nlp_cache['nlp']
 
-# Configuration BERTopic
-try:
-    # Modèle de sentence embeddings multilingue optimisé pour le français
-    embedding_model = SentenceTransformer(
-        'paraphrase-multilingual-MiniLM-L12-v2'
-    )
+def get_nltk_tools():
+    """Import et initialisation différés de NLTK"""
+    if 'stemmer' not in _nlp_cache:
+        try:
+            import nltk
+            from nltk.corpus import stopwords
+            from nltk.stem import SnowballStemmer
+            
+            nltk.download('stopwords', quiet=True)
+            _nlp_cache['french_stopwords'] = set(stopwords.words('french'))
+            _nlp_cache['stemmer'] = SnowballStemmer('french')
+        except ImportError:
+            logger.warning("NLTK non disponible")
+            _nlp_cache['french_stopwords'] = set()
+            _nlp_cache['stemmer'] = None
+    
+    return _nlp_cache.get('french_stopwords', set()), _nlp_cache.get('stemmer')
 
-    # Vectorizer personnalisé pour filtrer les mots non significatifs
-    vectorizer_model = CountVectorizer(
-        ngram_range=(1, 2),  # Unigrammes et bigrammes
-        stop_words=list(FRENCH_STOPWORDS) if FRENCH_STOPWORDS else None,
-        min_df=2,  # Au moins 2 occurrences
-        max_df=0.8,  # Maximum 80% des documents
-        vocabulary=None,
-    )
-
-    # Configuration BERTopic pour les rêves
-    bertopic_model = BERTopic(
-        embedding_model=embedding_model,
-        vectorizer_model=vectorizer_model,
-        min_topic_size=2,  # Minimum 2 rêves pour créer un thème
-        nr_topics='auto',  # Nombre automatique de thèmes
-        calculate_probabilities=True,
-        language="french",
-    )
-
-    logger.info("BERTopic configuré avec succès")
-    BERTOPIC_AVAILABLE = True
-
-except ImportError:
-    logger.warning(
-        "BERTopic non disponible. Installer avec: pip install bertopic sentence-transformers"
-    )
-    BERTOPIC_AVAILABLE = False
-    bertopic_model = None
-
+def get_bertopic_model():
+    """Import et configuration différés de BERTopic - VERSION SIMPLIFIÉE SANS SentenceTransformer"""
+    if 'bertopic' not in _bertopic_cache:
+        try:
+            from bertopic import BERTopic
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.decomposition import PCA
+            from sklearn.cluster import KMeans
+            
+            # Configuration simplifiée : utiliser TF-IDF + PCA + KMeans au lieu de SentenceTransformer + UMAP + HDBSCAN
+            
+            # Vectorizer TF-IDF (plus léger que SentenceTransformer)
+            vectorizer_model = TfidfVectorizer(
+                ngram_range=(1, 2),
+                max_features=100,  # Limiter les features
+                min_df=1,
+                max_df=0.8,
+                stop_words=None  # On gère les stopwords dans le preprocessing
+            )
+            
+            # PCA pour réduction dimensionnelle (remplace UMAP)
+            dimensionality_model = PCA(n_components=5, random_state=42)
+            
+            # KMeans pour clustering (remplace HDBSCAN)
+            cluster_model = KMeans(n_clusters=3, random_state=42, n_init=10)
+            
+            _bertopic_cache['bertopic'] = BERTopic(
+                vectorizer_model=vectorizer_model,
+                umap_model=dimensionality_model,  # BERTopic accepte PCA à la place d'UMAP
+                hdbscan_model=cluster_model,      # BERTopic accepte KMeans à la place d'HDBSCAN
+                min_topic_size=2,
+                nr_topics=3,  # Fixer le nombre de topics
+                verbose=False,
+            )
+            _bertopic_cache['available'] = True
+            
+        except ImportError as e:
+            logger.warning(f"BERTopic simplifié non disponible: {e}")
+            _bertopic_cache['bertopic'] = None
+            _bertopic_cache['available'] = False
+    
+    return _bertopic_cache['bertopic'], _bertopic_cache['available']
 # ---------- FONCTIONS UTILITAIRES ----------
 
 def read_file(file_path):
@@ -266,35 +276,77 @@ def _transcribe_via_httpx(file_path: str, language: str = "fr") -> str | None:
 
 # ---------- TRANSCRIPTION ----------
 
+def validate_transcription_length(transcription):
+    """
+    Valide si la transcription est suffisante pour l'analyse
+    Retourne (is_valid, error_message)
+    """
+    if not transcription or not transcription.strip():
+        return (
+            False,
+            "Aucun contenu détecté. Veuillez réessayer votre enregistrement.",
+        )
+
+    # Nettoyer le texte (enlever espaces, ponctuation basique)
+    clean_text = (
+        transcription.strip()
+        .replace('.', '')
+        .replace(',', '')
+        .replace('!', '')
+        .replace('?', '')
+    )
+    words = clean_text.split()
+
+    # Minimum 5 mots pour une analyse cohérente
+    if len(words) < 5:
+        return (
+            False,
+            "Enregistrement trop court. Décrivez votre rêve avec plus de détails pour une meilleure analyse.",
+        )
+
+    return True, None
+
+
 def transcribe_audio(audio_data, language="fr"):
-    """Transcrit un audio en texte avec Whisper de Groq + système retry"""
+    """Transcrit un audio en texte avec Whisper de Groq + système retry + validation longueur"""
     logger.info(f"Transcription audio démarrée - {len(audio_data)} bytes")
     start_time = time.time()
 
     # Garde-fou si la clé est absente ou le client non initialisé
     if not settings.GROQ_API_KEY or groq_client is None:
-        logger.error("Échec transcription audio: GROQ_API_KEY manquante ou client non initialisé")
-        metric_fail("groq", "transcribe", int((time.time() - start_time) * 1000), reason="no_api_key")
+        logger.error(
+            "Échec transcription audio: GROQ_API_KEY manquante ou client non initialisé"
+        )
+        metric_fail(
+            "groq",
+            "transcribe",
+            int((time.time() - start_time) * 1000),
+            reason="no_api_key",
+        )
         return None
 
     temp_file_path = None
     last_error = None
     total_retry_count = 0
     total_backoff_ms = 0
-    
+
     try:
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+        with tempfile.NamedTemporaryFile(
+            suffix='.wav', delete=False
+        ) as temp_file:
             temp_file.write(audio_data)
             temp_file_path = temp_file.name
 
         # Système de retry avec backoff exponentiel et configuration centralisée
         for attempt in range(1, AI_CONFIG['TRANSCRIBE_MAX_RETRIES'] + 1):
             try:
-                logger.info(f"Transcription tentative {attempt}/{AI_CONFIG['TRANSCRIBE_MAX_RETRIES']}")
-                
+                logger.info(
+                    f"Transcription tentative {attempt}/{AI_CONFIG['TRANSCRIBE_MAX_RETRIES']}"
+                )
+
                 # Enregistrer tentative de fallback
                 metric_fallback("groq", "transcribe", attempt)
-                
+
                 with open(temp_file_path, "rb") as audio_file:
                     transcription = groq_client.audio.transcriptions.create(
                         file=audio_file,
@@ -307,53 +359,106 @@ def transcribe_audio(audio_data, language="fr"):
                     )
 
                 duration = time.time() - start_time
-                
+
                 # Enregistrer retry stats si il y en a eu
                 if total_retry_count > 0:
-                    metric_retry("groq", "transcribe", total_retry_count, total_backoff_ms)
-                
+                    metric_retry(
+                        "groq",
+                        "transcribe",
+                        total_retry_count,
+                        total_backoff_ms,
+                    )
+
                 # Alertes sur contenu problématique
                 if len(transcription.text) < 10:
-                    logger.warning(f"Transcription très courte: {len(transcription.text)} caractères")
+                    logger.warning(
+                        f"Transcription très courte: {len(transcription.text)} caractères"
+                    )
                 if duration > 5:
                     logger.warning(f"Transcription lente: {duration:.2f}s")
-                logger.info(f"Transcription réussie - {len(transcription.text)} caractères en {duration:.2f}s")
+
+                # VALIDATION DE LA LONGUEUR DE TRANSCRIPTION
+                is_valid, error_message = validate_transcription_length(
+                    transcription.text
+                )
+                if not is_valid:
+                    logger.warning(
+                        f"Transcription trop courte rejetée: '{transcription.text[:50]}...'"
+                    )
+                    metric_fail(
+                        "groq",
+                        "transcribe",
+                        int((time.time() - start_time) * 1000),
+                        reason="too_short",
+                    )
+                    return {"error": "too_short", "message": error_message}
+
+                logger.info(
+                    f"Transcription valide - {len(transcription.text)} caractères en {duration:.2f}s"
+                )
                 metric_ok("groq", "transcribe", int(duration * 1000))
                 return transcription.text
 
             except Exception as e:
                 last_error = e
-                if _is_retryable_transcription_error(e) and attempt < AI_CONFIG['TRANSCRIBE_MAX_RETRIES']:
-                    sleep_s = round(AI_CONFIG['TRANSCRIBE_BACKOFF_BASE'] ** attempt, 2)
+                if (
+                    _is_retryable_transcription_error(e)
+                    and attempt < AI_CONFIG['TRANSCRIBE_MAX_RETRIES']
+                ):
+                    sleep_s = round(
+                        AI_CONFIG['TRANSCRIBE_BACKOFF_BASE'] ** attempt, 2
+                    )
                     sleep_ms = int(sleep_s * 1000)
-                    
+
                     # Compter les retries et backoff
                     total_retry_count += 1
                     total_backoff_ms += sleep_ms
-                    
-                    logger.warning(f"Transcription erreur réseau (retry dans {sleep_s}s): {e}")
+
+                    logger.warning(
+                        f"Transcription erreur réseau (retry dans {sleep_s}s): {e}"
+                    )
                     time.sleep(sleep_s)
                     continue
                 else:
-                    logger.error("Transcription error (%s): %s", type(e).__name__, e)
+                    logger.error(
+                        "Transcription error (%s): %s", type(e).__name__, e
+                    )
                     break
 
         # Fallback HTTPX en dernier recours
         logger.info("Tentative fallback HTTPX pour la transcription…")
-        
+
         # Enregistrer fallback HTTPX
-        metric_fallback("groq", "transcribe", AI_CONFIG['TRANSCRIBE_MAX_RETRIES'] + 1)  # +1 pour HTTPX
-        
+        metric_fallback(
+            "groq", "transcribe", AI_CONFIG['TRANSCRIBE_MAX_RETRIES'] + 1
+        )  # +1 pour HTTPX
+
         result = _transcribe_via_httpx(temp_file_path, language)
-        
+
         if result:
             duration = time.time() - start_time
             logger.info(f"Fallback HTTPX réussi en {duration:.2f}s")
-            
+
             # Enregistrer retry stats finales
             if total_retry_count > 0:
-                metric_retry("groq", "transcribe", total_retry_count, total_backoff_ms)
-            
+                metric_retry(
+                    "groq", "transcribe", total_retry_count, total_backoff_ms
+                )
+
+            # VALIDATION DE LA LONGUEUR POUR LE FALLBACK HTTPX AUSSI
+            is_valid, error_message = validate_transcription_length(result)
+            if not is_valid:
+                logger.warning(
+                    f"Transcription HTTPX trop courte rejetée: '{result[:50]}...'"
+                )
+                metric_fail(
+                    "groq",
+                    "transcribe",
+                    int((time.time() - start_time) * 1000),
+                    reason="too_short",
+                )
+                return {"error": "too_short", "message": error_message}
+
             metric_ok("groq", "transcribe", int(duration * 1000))
             return result
         else:
@@ -367,12 +472,16 @@ def transcribe_audio(audio_data, language="fr"):
                     reason = "quota"
                 elif "timeout" in msg:
                     reason = "timeout"
-            
+
             # Enregistrer retry stats finales même en cas d'échec
             if total_retry_count > 0:
-                metric_retry("groq", "transcribe", total_retry_count, total_backoff_ms)
-                
-            metric_fail("groq", "transcribe", int(duration * 1000), reason=reason)
+                metric_retry(
+                    "groq", "transcribe", total_retry_count, total_backoff_ms
+                )
+
+            metric_fail(
+                "groq", "transcribe", int(duration * 1000), reason=reason
+            )
             return None
 
     finally:
@@ -381,7 +490,9 @@ def transcribe_audio(audio_data, language="fr"):
             try:
                 os.unlink(temp_file_path)
             except Exception as e:
-                logger.warning(f"Impossible de supprimer le fichier temporaire: {e}")
+                logger.warning(
+                    f"Impossible de supprimer le fichier temporaire: {e}"
+                )
 
 # ---------- SYSTÈME DE FALLBACK ----------
 
@@ -739,45 +850,15 @@ def generate_image_from_text(user, prompt_text, dream_instance):
 
 # ---------- THEMATIQUE ----------
 
-# Configuration BERTopic avec paramètres ajustés pour petits datasets
-try:
-    if 'test' in sys.argv or getattr(settings, 'TESTING', False):
-        BERTOPIC_AVAILABLE = False
-        logger.info("BERTopic désactivé en mode test")
-    else:
-        # Modèle d'embeddings optimisé pour le français
-        embedding_model = SentenceTransformer(
-            'paraphrase-multilingual-MiniLM-L12-v2'
-        )
-
-        # UMAP avec paramètres pour petits datasets
-        umap_model = UMAP(
-            n_neighbors=2,  # Très petit pour gérer peu de documents
-            n_components=2,  # Réduction à 2D
-            min_dist=0.0,
-            metric='cosine',
-            random_state=42,
-        )
-
-        # HDBSCAN avec paramètres très permissifs
-        hdbscan_model = HDBSCAN(
-            min_cluster_size=2,  # Minimum 2 rêves par cluster
-            min_samples=1,  # Très permissif
-            metric='euclidean',
-            cluster_selection_method='eom',
-        )
-
-        BERTOPIC_AVAILABLE = True
-        logger.info("BERTopic configuré pour petits datasets")
-
-except ImportError:
-    logger.warning("BERTopic non disponible")
-    BERTOPIC_AVAILABLE = False
 
 def _preprocess_for_analysis(text: str) -> str:
     """Préprocesse le texte avec spaCy pour analyse thématique - version améliorée"""
+    # Import différé des outils NLP
+    nlp = get_nlp_model()
+    french_stopwords, stemmer = get_nltk_tools()
+    
     if not nlp or not text:
-        return _basic_preprocess(text)
+        return _basic_preprocess(text, french_stopwords, stemmer)
 
     text = text.lower()
     # ✅ AMÉLIORATION : Préserver plus de ponctuation contextuelle
@@ -826,7 +907,7 @@ def _preprocess_for_analysis(text: str) -> str:
             
             # ✅ AMÉLIORATION : Préférer forme originale pour certains cas
             if (
-                original not in FRENCH_STOPWORDS 
+                original not in french_stopwords 
                 and original not in DREAM_SPECIFIC_STOPWORDS
                 and not original.isdigit()
                 and token.is_alpha
@@ -857,10 +938,15 @@ def _preprocess_for_analysis(text: str) -> str:
 
     return ' '.join(unique_tokens)
 
-def _basic_preprocess(text: str) -> str:
+
+def _basic_preprocess(text: str, french_stopwords=None, stemmer=None) -> str:
     """Préprocessing basique sans spaCy - version améliorée"""
     if not text:
         return ""
+
+    # Import différé si pas fourni
+    if french_stopwords is None or stemmer is None:
+        french_stopwords, stemmer = get_nltk_tools()
 
     text = text.lower()
     text = re.sub(r'[^\w\s\'-]', ' ', text)  # Garder apostrophes et tirets
@@ -871,7 +957,7 @@ def _basic_preprocess(text: str) -> str:
         # ✅ AMÉLIORATION : Critères plus permissifs pour conserver plus de contexte
         if (
             len(token) >= 3  # Réduire le minimum de 4 à 3 caractères
-            and token not in FRENCH_STOPWORDS
+            and token not in french_stopwords
             and token not in DREAM_SPECIFIC_STOPWORDS
             and not token.isdigit()
             and token.isalpha()
@@ -884,7 +970,10 @@ def _basic_preprocess(text: str) -> str:
 
 def _bertopic_analysis(dream_texts: List[str], total_dreams: int):
     """Analyse BERTopic pour datasets moyens/grands (8+ rêves)"""
-    if not BERTOPIC_AVAILABLE or total_dreams < 8:
+    # Utiliser le modèle BERTopic déjà configuré
+    bertopic_model, bertopic_available = get_bertopic_model()
+    
+    if not bertopic_available or total_dreams < 8:
         return None
 
     # Préprocesser les textes
@@ -899,30 +988,11 @@ def _bertopic_analysis(dream_texts: List[str], total_dreams: int):
         return None
 
     try:
-        # Vectorizer adapté
-        vectorizer = CountVectorizer(
-            ngram_range=(1, 2),
-            stop_words=list(FRENCH_STOPWORDS) if FRENCH_STOPWORDS else None,
-            min_df=1,  # Plus permissif
-            max_df=0.9,
-            max_features=50,  # Limiter pour petits datasets
-        )
-
-        # BERTopic avec paramètres adaptés
-        topic_model = BERTopic(
-            embedding_model=embedding_model,
-            umap_model=umap_model,
-            hdbscan_model=hdbscan_model,
-            vectorizer_model=vectorizer,
-            min_topic_size=2,
-            nr_topics='auto',
-            verbose=False,
-        )
-
-        topics, probabilities = topic_model.fit_transform(preprocessed_texts)
+        # Utiliser directement le modèle configuré
+        topics, probabilities = bertopic_model.fit_transform(preprocessed_texts)
 
         # Analyser les résultats
-        topic_info = topic_model.get_topic_info()
+        topic_info = bertopic_model.get_topic_info()
         valid_topics = topic_info[topic_info.Topic != -1]
 
         if len(valid_topics) == 0:
@@ -934,7 +1004,7 @@ def _bertopic_analysis(dream_texts: List[str], total_dreams: int):
 
         for topic_id, count in topic_counts.items():
             if topic_id != -1 and count >= 2:
-                topic_words = topic_model.get_topic(topic_id)
+                topic_words = bertopic_model.get_topic(topic_id)
                 if topic_words:
                     # Prendre les 2-3 mots les plus représentatifs
                     top_words = [
@@ -954,6 +1024,9 @@ def _bertopic_analysis(dream_texts: List[str], total_dreams: int):
 
 def _category_analysis(dream_texts: List[str], total_dreams: int):
     """Analyse par catégories prédéfinies pour petits datasets - version améliorée"""
+    # Import différé des outils NLTK
+    french_stopwords, stemmer = get_nltk_tools()
+    
     theme_document_freq = Counter()
     theme_word_freq = Counter()  # Pour compter la fréquence totale des mots
 
@@ -1076,7 +1149,8 @@ def get_themes_stats_filtered(user, period=None, start_date=None, end_date=None)
         }
 
     # ✅ UTILISER LA MÊME LOGIQUE qu'analyze_recurring_themes
-    if total_dreams >= 8 and BERTOPIC_AVAILABLE:
+    bertopic_model, bertopic_available = get_bertopic_model()
+    if total_dreams >= 8 and bertopic_available:
         themes_results = _bertopic_analysis(dream_texts, total_dreams)
         method = "BERTopic"
     else:
@@ -1180,7 +1254,8 @@ def get_themes_timeline_filtered(user, period=None, start_date=None, end_date=No
         # ✅ COMPTER SEULEMENT les thèmes qui correspondent à notre liste globale
         if len(texts) >= 1:
             # Utiliser la même méthode d'analyse que pour les stats globales
-            if len(texts) >= 8 and BERTOPIC_AVAILABLE:
+            bertopic_model, bertopic_available = get_bertopic_model()
+            if len(texts) >= 8 and bertopic_available:
                 period_themes = _bertopic_analysis(texts, len(texts))
             else:
                 period_themes = _category_analysis(texts, len(texts))
@@ -1226,6 +1301,7 @@ def analyze_recurring_themes(user, min_dreams=2, min_occurrence=2):
         'all_themes': [(name, data['count']) for name, data in result['themes'].items()],
         'message': f"{len(result['themes'])} thématiques trouvées ({result['method']})",
     }
+
 # ---------- PROFIL ONYRIQUE ----------
 
 def get_profil_onirique_stats(user):

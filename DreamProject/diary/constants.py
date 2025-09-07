@@ -250,4 +250,3 @@ DREAM_SPECIFIC_STOPWORDS = {
     'réponse',
     'idée',
 }
-
