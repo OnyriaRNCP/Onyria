@@ -613,13 +613,25 @@ def safe_mistral_call(model, messages, operation="API call"):
 
                 if attempt == len(models_to_try) - 1:
                     total_duration = time.time() - start_time
-                    logger.error(f"[{operation}] Tous les fallbacks échoués après {total_duration:.2f}s")
-                    
-                    # NOUVEAU: Enregistrer retry stats finales même en cas d'échec
+                    reason = type(e).__name__.lower()
+
+                    if "quota" in merged_msg:
+                        reason = "quota"
+                    elif "rate_limit" in merged_msg or status_code == 429:
+                        reason = "rate_limit"
+                    elif "timeout" in merged_msg:
+                        reason = "timeout"
+
+                    logger.error(f"[{operation}] Tous les fallbacks échoués après {total_duration:.2f}s (raison={reason})")
+
                     if total_backoff_ms > 0:
                         metric_retry("mistral", operation_key, len(models_to_try), total_backoff_ms)
-                    
+
+                    # Enregistrer l'échec final
+                    metric_fail("mistral", operation_key, int(total_duration * 1000), reason=reason)
+
                     return None
+
 
                 time.sleep(wait)
                 continue
@@ -779,7 +791,7 @@ def generate_image_from_text(user, prompt_text, dream_instance):
     Stocke l'image en base64 dans le modèle Dream.
     """
     if mistral_client is None:
-        logger.error(f"Génération image impossible - MISTRAL_API_KEY manquante")
+        logger.error("Génération image impossible - MISTRAL_API_KEY manquante")
         metric_fail("mistral", "image", 0, reason="no_api_key")
         return False
 
@@ -821,7 +833,7 @@ def generate_image_from_text(user, prompt_text, dream_instance):
             image_bytes = mistral_client.files.download(file_id=file_id).read()
 
             # Stocker en base64 au lieu de fichier
-            dream_instance.set_image_from_bytes(image_bytes, format='PNG')
+            dream_instance.set_image_from_bytes(image_bytes, format="PNG")
             dream_instance.save()
 
             duration = time.time() - start_time
@@ -831,17 +843,21 @@ def generate_image_from_text(user, prompt_text, dream_instance):
 
         except Exception as e:
             error_msg = str(e).lower()
-            reason = "error"
-            if "insufficient_quota" in error_msg or "quota" in error_msg:
-                logger.warning(f"Quota image atteint: {e}")
-                reason = "quota"
-            elif "rate_limit" in error_msg or "too many requests" in error_msg:
-                logger.warning(f"Rate limit image: {e}")
-                reason = "rate_limit"
-            else:
-                logger.error(f"Erreur image: {e}")
 
-            metric_fail("mistral", "image", int((time.time() - start_time) * 1000), reason=reason)
+            # Valeur par défaut
+            reason = "unknown"
+
+            # Mapping cohérent avec safe_mistral_call
+            if "insufficient_quota" in error_msg or "quota" in error_msg:
+                reason = "quota"
+            elif "rate_limit" in error_msg or "too many requests" in error_msg or "429" in error_msg:
+                reason = "rate_limit"
+            elif "timeout" in error_msg:
+                reason = "timeout"
+
+            duration = time.time() - start_time
+            logger.error(f"Erreur image ({reason}) après {duration:.2f}s: {e}")
+            metric_fail("mistral", "image", int(duration * 1000), reason=reason)
             return False
 
     except Exception as e:
