@@ -340,7 +340,6 @@ def analyse_from_voice(request):
         event_stream(), content_type='text/event-stream'
     )
     response['Cache-Control'] = 'no-cache'
-    response['X-Accel-Buffering'] = 'no'  # <-- important pour Render / proxy
     return response
 
 
