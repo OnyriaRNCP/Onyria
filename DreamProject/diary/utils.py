@@ -132,6 +132,7 @@ def get_bertopic_model():
             _bertopic_cache['available'] = False
     
     return _bertopic_cache['bertopic'], _bertopic_cache['available']
+
 # ---------- FONCTIONS UTILITAIRES ----------
 
 def read_file(file_path):
@@ -205,28 +206,34 @@ def validate_and_fix_interpretation(interpretation_data):
     logger.debug("Validation interprétation terminée avec succès")
     return fixed_interpretation
 
+def _map_reason_from_msg(msg: str, status_code: int | None = None) -> str:
+    """
+    Mappe un message d'erreur ou un code HTTP vers une raison standardisée.
+    - Cherche dans les mots-clés de AI_CONFIG['ERROR_REASON_KEYWORDS']
+    - Fallback sur status_code (ex: 429 → rate_limit)
+    - Retourne 'unknown' si rien ne correspond
+    """
+    if not msg:
+        msg = ""
+    msg = msg.lower()
+
+    for reason, keywords in AI_CONFIG.get("ERROR_REASON_KEYWORDS", {}).items():
+        if any(k in msg for k in keywords):
+            return reason
+
+    if status_code == 429:
+        return "rate_limit"
+
+    return "unknown"
+
+
 # ---------- SYSTÈME DE RETRY ----------
 
 
 def _is_retryable_transcription_error(err: Exception) -> bool:
     """Détecte les erreurs réseau/temporaires qui méritent un retry"""
     msg = str(err).lower()
-    keywords = [
-        "connection error",
-        "connection reset",
-        "connection aborted",
-        "timeout",
-        "temporarily unavailable",
-        "service unavailable",
-        "tls",
-        "ssl",
-        "proxy",
-        "rate limit",
-        "503",
-        "502",
-        "429",
-    ]
-    return any(k in msg for k in keywords)
+    return any(k in msg for k in AI_CONFIG['TRANSCRIBE_RETRYABLE_KEYWORDS'])
 
 def _transcribe_via_httpx(file_path: str, language: str = "fr") -> str | None:
     """
@@ -465,15 +472,10 @@ def transcribe_audio(audio_data, language="fr"):
             return result
         else:
             duration = time.time() - start_time
-            reason = "httpx_fallback_failed"
             if last_error is not None:
-                msg = str(last_error).lower()
-                if "rate" in msg:
-                    reason = "rate_limit"
-                elif "quota" in msg:
-                    reason = "quota"
-                elif "timeout" in msg:
-                    reason = "timeout"
+                reason = _map_reason_from_msg(str(last_error), None)
+            else:
+                reason = "httpx_fallback_failed"
 
             # Enregistrer retry stats finales même en cas d'échec
             if total_retry_count > 0:
@@ -498,7 +500,7 @@ def transcribe_audio(audio_data, language="fr"):
 
 # ---------- SYSTÈME DE FALLBACK ----------
 
-# Concrétisation paramétrable depuis settings.AI_CONFIG (DRY, pas de doublon)
+# Concrétisation paramétrable depuis settings.AI_CONFIG 
 try:
     RETRYABLE_STATUS = set(AI_CONFIG['RETRYABLE_STATUS'])
     RETRYABLE_KEYWORDS = tuple(AI_CONFIG['RETRYABLE_KEYWORDS'])
@@ -583,16 +585,8 @@ def safe_mistral_call(model, messages, operation="API call"):
             merged_msg = (error_msg + " " + body_text.lower()).strip()
 
             retryable = (
-                (status_code in RETRYABLE_STATUS) or
-                any(k in merged_msg for k in RETRYABLE_KEYWORDS) or
-                any(k in merged_msg for k in [
-                    "insufficient_quota",
-                    "quota_exceeded",
-                    "rate_limit",
-                    "model_not_found",
-                    "service_unavailable",
-                    "timeout",
-                ])
+                (status_code in AI_CONFIG['RETRYABLE_STATUS']) or
+                any(k in merged_msg for k in AI_CONFIG['RETRYABLE_KEYWORDS'])
             )
 
             if retryable:
@@ -600,44 +594,35 @@ def safe_mistral_call(model, messages, operation="API call"):
                 maxd = AI_CONFIG.get('CHAT_RETRY_MAX_DELAY_S', 3.0)
                 wait = min(base * (2 ** attempt), maxd) + random.uniform(0, 0.3)
                 wait_ms = int(wait * 1000)
-                
+
                 # Accumuler backoff
                 total_backoff_ms += wait_ms
 
-                if "quota" in merged_msg:
-                    logger.warning(f"[{operation}] QUOTA ATTEINT - {current_model}")
-                elif "rate_limit" in merged_msg or status_code == 429:
-                    logger.warning(f"[{operation}] RATE LIMIT - {current_model}")
-                else:
-                    logger.warning(f"[{operation}] Erreur {current_model}: {e}")
+                reason = _map_reason_from_msg(merged_msg, status_code)
+
+                log_messages = {
+                    "quota": f"[{operation}] QUOTA ATTEINT - {current_model}",
+                    "rate_limit": f"[{operation}] RATE LIMIT - {current_model}",
+                }
+
+                logger.warning(log_messages.get(reason, f"[{operation}] Erreur {current_model}: {e}"))
 
                 if attempt == len(models_to_try) - 1:
                     total_duration = time.time() - start_time
-                    reason = type(e).__name__.lower()
-
-                    if "quota" in merged_msg:
-                        reason = "quota"
-                    elif "rate_limit" in merged_msg or status_code == 429:
-                        reason = "rate_limit"
-                    elif "timeout" in merged_msg:
-                        reason = "timeout"
-
                     logger.error(f"[{operation}] Tous les fallbacks échoués après {total_duration:.2f}s (raison={reason})")
 
                     if total_backoff_ms > 0:
                         metric_retry("mistral", operation_key, len(models_to_try), total_backoff_ms)
 
-                    # Enregistrer l'échec final
                     metric_fail("mistral", operation_key, int(total_duration * 1000), reason=reason)
-
                     return None
-
 
                 time.sleep(wait)
                 continue
             else:
                 logger.error(f"[{operation}] Erreur critique {current_model}: {e}")
                 raise e
+
 
     return None
 
@@ -848,12 +833,7 @@ def generate_image_from_text(user, prompt_text, dream_instance):
             reason = "unknown"
 
             # Mapping cohérent avec safe_mistral_call
-            if "insufficient_quota" in error_msg or "quota" in error_msg:
-                reason = "quota"
-            elif "rate_limit" in error_msg or "too many requests" in error_msg or "429" in error_msg:
-                reason = "rate_limit"
-            elif "timeout" in error_msg:
-                reason = "timeout"
+            reason = _map_reason_from_msg(error_msg, None)
 
             duration = time.time() - start_time
             logger.error(f"Erreur image ({reason}) après {duration:.2f}s: {e}")

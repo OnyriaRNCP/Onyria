@@ -9,6 +9,9 @@ from .forms import RegisterForm, LoginForm, CustomPasswordChangeForm, BioForm
 
 @require_http_methods(["GET", "POST"])
 def register_view(request):
+    if request.user.is_authenticated:  # déjà connecté
+        return redirect('account_management')
+
     if request.method == 'POST':
         form = RegisterForm(request.POST)
         if form.is_valid():
@@ -25,6 +28,9 @@ def register_view(request):
 @require_http_methods(["GET", "POST"])
 @never_cache
 def login_view(request):
+    if request.user.is_authenticated:  # déjà connecté
+        return redirect('account_management')
+
     if request.method == 'POST':
         form = LoginForm(request.POST)
         if form.is_valid():
