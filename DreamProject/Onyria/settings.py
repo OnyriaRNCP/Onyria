@@ -80,15 +80,35 @@ AI_CONFIG = {
     'RETRYABLE_STATUS': [408, 429, 500, 502, 503, 504],
     'RETRYABLE_KEYWORDS': [
         "too many requests",
-        "rate limit",
+        "rate_limit",
         "service_unavailable",
         "temporarily unavailable",
         "timeout",
         "capacity",
         "service tier capacity",
+        "insufficient_quota",
+        "quota_exceeded",
+        "model_not_found",
     ],
     'CHAT_RETRY_BASE_DELAY_S': 0.5,
     'CHAT_RETRY_MAX_DELAY_S': 3.0,
+
+    # RÈGLES DE RETRY TRANSCRIPTION (source de vérité unique)
+    'TRANSCRIBE_RETRYABLE_KEYWORDS': [
+        "connection error",
+        "connection reset",
+        "connection aborted",
+        "timeout",
+        "temporarily unavailable",
+        "service unavailable",
+        "tls",
+        "ssl",
+        "proxy",
+        "rate limit",
+        "503",
+        "502",
+        "429",
+    ]
 }
 
 # Clés API depuis les variables d'environnement

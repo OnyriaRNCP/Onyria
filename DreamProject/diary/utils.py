@@ -211,22 +211,7 @@ def validate_and_fix_interpretation(interpretation_data):
 def _is_retryable_transcription_error(err: Exception) -> bool:
     """Détecte les erreurs réseau/temporaires qui méritent un retry"""
     msg = str(err).lower()
-    keywords = [
-        "connection error",
-        "connection reset",
-        "connection aborted",
-        "timeout",
-        "temporarily unavailable",
-        "service unavailable",
-        "tls",
-        "ssl",
-        "proxy",
-        "rate limit",
-        "503",
-        "502",
-        "429",
-    ]
-    return any(k in msg for k in keywords)
+    return any(k in msg for k in AI_CONFIG['TRANSCRIBE_RETRYABLE_KEYWORDS'])
 
 def _transcribe_via_httpx(file_path: str, language: str = "fr") -> str | None:
     """
@@ -498,7 +483,7 @@ def transcribe_audio(audio_data, language="fr"):
 
 # ---------- SYSTÈME DE FALLBACK ----------
 
-# Concrétisation paramétrable depuis settings.AI_CONFIG (DRY, pas de doublon)
+# Concrétisation paramétrable depuis settings.AI_CONFIG 
 try:
     RETRYABLE_STATUS = set(AI_CONFIG['RETRYABLE_STATUS'])
     RETRYABLE_KEYWORDS = tuple(AI_CONFIG['RETRYABLE_KEYWORDS'])
@@ -583,16 +568,8 @@ def safe_mistral_call(model, messages, operation="API call"):
             merged_msg = (error_msg + " " + body_text.lower()).strip()
 
             retryable = (
-                (status_code in RETRYABLE_STATUS) or
-                any(k in merged_msg for k in RETRYABLE_KEYWORDS) or
-                any(k in merged_msg for k in [
-                    "insufficient_quota",
-                    "quota_exceeded",
-                    "rate_limit",
-                    "model_not_found",
-                    "service_unavailable",
-                    "timeout",
-                ])
+                (status_code in AI_CONFIG['RETRYABLE_STATUS']) or
+                any(k in merged_msg for k in AI_CONFIG['RETRYABLE_KEYWORDS'])
             )
 
             if retryable:
