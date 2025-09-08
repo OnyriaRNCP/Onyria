@@ -76,6 +76,12 @@ AI_CONFIG = {
         'open-mistral-7b': [],
     },
 
+    'ERROR_REASON_KEYWORDS': {
+        "quota": ["insufficient_quota", "quota_exceeded", "quota"],
+        "rate_limit": ["rate_limit", "too many requests", "429"],
+        "timeout": ["timeout", "request timeout"],
+    },
+
     # RÈGLES DE RETRY/FALLBACK CHAT (source de vérité unique)
     'RETRYABLE_STATUS': [408, 429, 500, 502, 503, 504],
     'RETRYABLE_KEYWORDS': [
