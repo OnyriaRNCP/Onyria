@@ -24,6 +24,7 @@ from .utils import (
     get_themes_timeline_filtered,
     format_emotion_label,
     format_dream_type_label,
+    format_interpretation,
     transcribe_audio,
 )
 from .constants import EMOTION_LABELS, DREAM_ERROR_MESSAGE
@@ -102,12 +103,7 @@ def dream_detail_view(request, dream_id):
         formatted_dream_type = "Non analysé"
 
     # Parser l'interprétation si c'est une string JSON
-    interpretation = dream.interpretation
-    if isinstance(interpretation, str):
-        try:
-            interpretation = json.loads(interpretation)
-        except json.JSONDecodeError:
-            interpretation = {}
+    interpretation = format_interpretation(dream.interpretation)
 
     context = {
         'dream': dream,
@@ -283,12 +279,15 @@ def analyse_from_voice(request):
                 aborted = True
                 return
 
+            interpretation = format_interpretation(interpretation)
+
             dream.interpretation = interpretation
             dream.save()
 
             metric_sse_event(session_id)
             event_count += 1
             yield f"data: {json.dumps({'step': 'interpretation', 'data': {'interpretation': interpretation}})}\n\n"
+
 
             total_duration = time.time() - start_time
             metric_pipeline_duration("total_workflow_ms", int(total_duration * 1000))

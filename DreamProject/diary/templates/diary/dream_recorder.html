@@ -272,16 +272,7 @@
           p.appendChild(strong);
           
           // Extraction robuste du contenu (gestion formats variables)
-          let content;
-          if (typeof val === 'string') {
-            content = val;
-          } else if (val && val.contenu) {
-            content = val.contenu;
-          } else if (val && val.content) {
-            content = val.content;
-          } else {
-            content = String(val);
-          }
+          const content = val;
           p.appendChild(document.createTextNode(` : ${content}`));
           interpretation.appendChild(p);
         }

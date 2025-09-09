@@ -1609,3 +1609,41 @@ def format_emotion_label(val: Any) -> str:
 def format_dream_type_label(val: Any) -> str:
     """Ex: 'CAUCHEMAR', 'cauchemar', 'Cauchemàr' -> 'Cauchemar' (via DREAM_TYPE_LABELS si présent)"""
     return _normalize_label(val, DREAM_TYPE_LABELS)
+
+def format_interpretation(raw):
+    """
+    Normalise l'interprétation d'un rêve pour garantir un format stable.
+    - raw peut être une string JSON ou déjà un dict
+    - Retourne toujours un dict avec les 4 clés attendues
+    """
+    if not raw:
+        return {
+            "Émotionnelle": "Interprétation non disponible",
+            "Symbolique": "Interprétation non disponible",
+            "Cognitivo-scientifique": "Interprétation non disponible",
+            "Freudien": "Interprétation non disponible",
+        }
+
+    # Si c’est une string JSON → parser
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return {
+                "Émotionnelle": "Format invalide",
+                "Symbolique": "Format invalide",
+                "Cognitivo-scientifique": "Format invalide",
+                "Freudien": "Format invalide",
+            }
+
+    # Si ce n’est pas un dict → fallback
+    if not isinstance(raw, dict):
+        return {
+            "Émotionnelle": str(raw),
+            "Symbolique": str(raw),
+            "Cognitivo-scientifique": str(raw),
+            "Freudien": str(raw),
+        }
+
+    # Normalisation via validate_and_fix_interpretation()
+    return validate_and_fix_interpretation(raw)
