@@ -409,8 +409,8 @@ def _load_complete_jsonl_snapshot() -> Dict:
                 # SSE sessions (1 par rêve)
                 sse_sessions.append({
                     "started_at": rec.get("started_at", time.time()),
-                    "first_event_at": rec.get("started_at", time.time()) + 1,
-                    "events_count": 5,
+                    "first_event_at": rec.get("first_event_at") or None,
+                    "events_count": rec.get("sse_event_count", 0),
                     "completed": rec.get("sse_completed", True),
                     "aborted": rec.get("sse_aborted", False),
                 })
@@ -478,13 +478,25 @@ def _load_complete_jsonl_snapshot() -> Dict:
         "aborted_sessions": len([s for s in sse_sessions if s["aborted"]]),
         "completion_rate": 0.0,
         "abort_rate": 0.0,
-        "avg_ttfb_ms": 1000,
-        "avg_events_per_session": 5.0
+        "avg_ttfb_ms": 0,
+        "avg_events_per_session": 0.0
     }
 
     if sse_sessions:
         sse_out["completion_rate"] = round(sse_out["completed_sessions"] / len(sse_sessions), 3)
         sse_out["abort_rate"] = round(sse_out["aborted_sessions"] / len(sse_sessions), 3)
+        sse_out["avg_events_per_session"] = round(
+            sum(s["events_count"] for s in sse_sessions) / len(sse_sessions), 1
+        )
+
+        ttfb_values = []
+        for s in sse_sessions:
+            if s.get("first_event_at") and s.get("started_at"):
+                ttfb_ms = int((s["first_event_at"] - s["started_at"]) * 1000)
+                ttfb_values.append(ttfb_ms)
+        if ttfb_values:
+            sse_out["avg_ttfb_ms"] = int(sum(ttfb_values) / len(ttfb_values))
+
 
     # 8. Totaux
     total_ok = sum(counts.get("ok", 0) for counts in availability_data.values())
@@ -809,7 +821,8 @@ def record_dream_trace(
     interpretation_ms: Optional[int] = None,
     sse_completed: bool = True,
     sse_aborted: bool = False,
-    sse_event_count: int = 0,   # <-- ajout
+    sse_event_count: int = 0,
+    first_event_at_ts: Optional[float] = None,
 ) -> None:
     """Enregistre une trace de rêve en DEV."""
     if not (_APP_ENV == "dev" and _PERSIST_TRACES):
@@ -831,6 +844,7 @@ def record_dream_trace(
         "sse_completed": sse_completed,
         "sse_aborted": sse_aborted,
         "sse_event_count": sse_event_count,
+        "first_event_at": float(first_event_at_ts) if first_event_at_ts else None,
     }
     _append_jsonl(_TRACES_PATH, rec, max_lines=_MAX_TRACES)
 
