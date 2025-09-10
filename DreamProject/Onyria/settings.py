@@ -81,9 +81,9 @@ AI_CONFIG = {
         "timeout": ["timeout", "request timeout"],
     },
 
-    # RÈGLES DE RETRY/FALLBACK CHAT (source de vérité unique)
-    'RETRYABLE_STATUS': [408, 429, 500, 502, 503, 504],
-    'RETRYABLE_KEYWORDS': [
+    # RÈGLES DE FALLBACK pour l'analyse Mistral
+    'FALLBACK_STATUS': [408, 429, 500, 502, 503, 504],
+    'FALLBACK_KEYWORDS': [
         "too many requests",
         "rate_limit",
         "service_unavailable",
@@ -95,10 +95,10 @@ AI_CONFIG = {
         "quota_exceeded",
         "model_not_found",
     ],
-    'CHAT_RETRY_BASE_DELAY_S': 0.5,
-    'CHAT_RETRY_MAX_DELAY_S': 3.0,
+    'FALLBACK_BASE_DELAY_S': 0.5,   # backoff avant modèle suivant
+    'FALLBACK_MAX_DELAY_S': 3.0,
 
-    # RÈGLES DE RETRY TRANSCRIPTION (source de vérité unique)
+    # RÈGLES DE RETRY pour la transcription Groq
     'TRANSCRIBE_RETRYABLE_KEYWORDS': [
         "connection error",
         "connection reset",

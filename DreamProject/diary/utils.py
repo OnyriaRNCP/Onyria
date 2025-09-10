@@ -475,17 +475,16 @@ def transcribe_audio(audio_data, language="fr"):
                     f"Impossible de supprimer le fichier temporaire: {e}"
                 )
 
-
 # ---------- SYSTÈME DE FALLBACK pour Mistral ----------
 
 # Concrétisation paramétrable depuis settings.AI_CONFIG 
 try:
-    RETRYABLE_STATUS = set(AI_CONFIG['RETRYABLE_STATUS'])
-    RETRYABLE_KEYWORDS = tuple(AI_CONFIG['RETRYABLE_KEYWORDS'])
+    FALLBACK_STATUS = set(AI_CONFIG['FALLBACK_STATUS'])
+    FALLBACK_KEYWORDS = tuple(AI_CONFIG['FALLBACK_KEYWORDS'])
 except KeyError as e:
-    logger.error(f"AI_CONFIG manquant: {e}. Règles de retry vides par sécurité.")
-    RETRYABLE_STATUS = set()
-    RETRYABLE_KEYWORDS = tuple()
+    logger.error(f"AI_CONFIG manquant: {e}. Règles de fallback vides par sécurité.")
+    FALLBACK_STATUS = set()
+    FALLBACK_KEYWORDS = tuple()
 
 def _extract_status_and_text(e: Exception):
     status = getattr(e, "status_code", None)
@@ -501,16 +500,11 @@ def _extract_status_and_text(e: Exception):
 
 def safe_mistral_call(model, messages, operation="API call"):
     """
-    Appel Mistral sécurisé avec système de fallback automatique
-
-    Args:
-        model: Modèle principal à utiliser
-        messages: Messages pour l'API
-        operation: Description de l'opération (pour les logs)
-
-    Returns:
-        Response de l'API ou None si tous les fallbacks échouent
+    Appel Mistral sécurisé avec système de fallback automatique.
+    On essaie le modèle principal puis les modèles de fallback,
+    avec un délai (backoff) entre chaque tentative.
     """
+
     if mistral_client is None:
         logger.error(f"[{operation}] Client Mistral non initialisé - MISTRAL_API_KEY manquante")
         return None
@@ -518,7 +512,7 @@ def safe_mistral_call(model, messages, operation="API call"):
     logger.info(f"[{operation}] Démarrage avec {model}")
     start_time = time.time()
 
-    # Utilisation de la configuration centralisée pour les fallbacks
+    # Liste des modèles à essayer : principal + fallbacks
     models_to_try = [model] + AI_CONFIG['FALLBACK_CHAINS'].get(model, [])
     logger.debug(f"[{operation}] Chaîne de fallback: {models_to_try}")
 
@@ -535,7 +529,7 @@ def safe_mistral_call(model, messages, operation="API call"):
             )
             attempt_duration = time.time() - attempt_start
 
-            # Succès : log final avec le nombre réel de fallbacks (= attempt)
+            # Succès : on enregistre combien de fallbacks ont été faits (0 = pas de fallback)
             metric_fallback("mistral", operation_key, attempt)
 
             if attempt > 0:
@@ -555,14 +549,15 @@ def safe_mistral_call(model, messages, operation="API call"):
             status_code, body_text = _extract_status_and_text(e)
             merged_msg = (error_msg + " " + body_text.lower()).strip()
 
-            retryable = (
-                (status_code in AI_CONFIG['RETRYABLE_STATUS']) or
-                any(k in merged_msg for k in AI_CONFIG['RETRYABLE_KEYWORDS'])
+            # Ici fallbackable veut dire : "on peut tenter le modèle suivant"
+            can_fallback = (
+                (status_code in AI_CONFIG['FALLBACK_STATUS']) or
+                any(k in merged_msg for k in AI_CONFIG['FALLBACK_KEYWORDS'])
             )
 
-            if retryable:
-                base = AI_CONFIG.get('CHAT_RETRY_BASE_DELAY_S', 0.5)
-                maxd = AI_CONFIG.get('CHAT_RETRY_MAX_DELAY_S', 3.0)
+            if can_fallback:
+                base = AI_CONFIG.get('CHAT_FALLBACK_BASE_DELAY_S', 0.5)
+                maxd = AI_CONFIG.get('CHAT_FALLBACK_MAX_DELAY_S', 3.0)
                 wait = min(base * (2 ** attempt), maxd) + random.uniform(0, 0.3)
 
                 reason = _map_reason_from_msg(merged_msg, status_code)
@@ -578,7 +573,7 @@ def safe_mistral_call(model, messages, operation="API call"):
                     total_duration = time.time() - start_time
                     logger.error(f"[{operation}] Tous les fallbacks échoués après {total_duration:.2f}s (raison={reason})")
 
-                    # Enregistrer les fallback (= attempt) après échec de tous les modèles
+                    # Enregistrer les fallbacks (= attempt) même en cas d'échec final
                     metric_fallback("mistral", operation_key, attempt)
                     metric_fail("mistral", operation_key, int(total_duration * 1000), reason=reason)
                     return None
