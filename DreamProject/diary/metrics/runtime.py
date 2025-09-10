@@ -74,16 +74,17 @@ class _Store:
             self.pipeline_durations.setdefault(step, []).append(int(duration_ms))
 
     # Enregistrer fallback (logique **par requête** : appeler UNE SEULE fois par requête
-    # avec la valeur d'`attempt` finale. Example: attempt=1 (pas de fallback) ; attempt=3 (2 fallbacks effectués))
+    # avec la valeur d'`attempt` finale. Example: attempt=0 (pas de fallback) ; attempt=2 (2 fallbacks effectués))
     def record_fallback(self, provider: str, op: str, attempt: int) -> None:
         key = self._key(provider, op)
         with self._lock:
-            bucket = self.fallbacks.setdefault(key, {"total_calls": 0, "fallback_calls": 0})
-            # total_calls = nombre de requêtes (car on appelle record_fallback une seule fois par requête)
-            bucket["total_calls"] += 1
-            # fallback_calls = requêtes ayant eu AU MOINS un fallback (attempt > 1)
-            if attempt > 1:
-                bucket["fallback_calls"] += 1
+            bucket = self.fallbacks.setdefault(key, {"fallback_calls": 0})
+            # Nombre réel de fallbacks = attempt (si attempt démarre à 0)
+            if attempt > 0:
+                bucket["fallback_calls"] += attempt
+
+
+
 
     #Enregistrer retry (peut être appelé par requête ou par opération agrégée)
     def record_retry(self, provider: str, op: str, retry_count: int, backoff_ms: int) -> None:
@@ -341,12 +342,13 @@ def _load_complete_jsonl_snapshot() -> Dict:
                     event = rec.get("event")
                     if provider and op and event == "fallback":
                         key = f"{provider}.{op}"
-                        attempt = rec.get("attempt", 1)
-                        bucket = fallback_data.setdefault(key, {"total_calls": 0, "fallback_calls": 0})
-                        bucket["total_calls"] += 1            # une ligne = une requête
-                        if attempt > 1:
-                            bucket["fallback_calls"] += 1      # a eu au moins un fallback
+                        fallbacks = rec.get("fallbacks", 0)  # <- correspond à ce qu'on écrit dans metric_fallback()
+                        bucket = fallback_data.setdefault(key, {"fallback_calls": 0})
+                        if fallbacks > 0:  # 0 = aucun fallback
+                            bucket["fallback_calls"] += fallbacks
                         continue
+
+
 
                     if provider and op and event == "retry":
                         key = f"{provider}.{op}"
@@ -534,22 +536,24 @@ def metric_pipeline_duration(step: str, duration_ms: int) -> None:
 def metric_fallback(provider: str, op: str, attempt: int) -> None:
     """
     Enregistre le Fallback **par requête** (APPELER UNE SEULE FOIS PAR REQUÊTE)
-    - attempt = 1  → pas de fallback
-    - attempt > 1  → la requête a eu au moins un fallback
+
+    - attempt = 0 → pas de fallback (premier essai)
+    - attempt >= 1 → la requête a eu au moins un fallback
     """
     if not _COLLECT_ENABLED:
         return
+
+    # Décaler ici : on interprète attempt=0 comme "pas de fallback"
     _STORE.record_fallback(provider, op, attempt)
-    if attempt > 1:
-        logger.info(f"[FALLBACK] provider={provider} op={op} attempt={attempt}")
-    # Persistance DEV (par requête)
+    if attempt > 0:
+        logger.info(f"[FALLBACK] provider={provider} op={op} fallback={attempt}")
     if _APP_ENV == "dev" and _PERSIST_METRICS:
         _append_jsonl(_METRICS_PATH, {
             "ts": time.time(),
             "provider": provider,
             "op": op,
             "event": "fallback",
-            "attempt": attempt,  # valeur finale
+            "fallbacks": attempt,  # nb de vrais fallbacks
         })
 
 def metric_retry(provider: str, op: str, retry_count: int, backoff_ms: int) -> None:

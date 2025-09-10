@@ -66,7 +66,6 @@ AI_CONFIG = {
     # Timeouts et limites
     'DEFAULT_TEMPERATURE': 0.0,
     'API_TIMEOUT': 30,
-    'SSE_SLOW_WARNING_THRESHOLD': 15,
     
     # Hiérarchies de fallback par modèle
     'FALLBACK_CHAINS': {

@@ -227,7 +227,7 @@ def _map_reason_from_msg(msg: str, status_code: int | None = None) -> str:
     return "unknown"
 
 
-# ---------- SYSTÈME DE RETRY ----------
+# ---------- SYSTÈME DE RETRY/FALLBACK pour la transcription ----------
 
 
 def _is_retryable_transcription_error(err: Exception) -> bool:
@@ -353,9 +353,6 @@ def transcribe_audio(audio_data, language="fr"):
                     f"Transcription tentative {attempt}/{AI_CONFIG['TRANSCRIBE_MAX_RETRIES']}"
                 )
 
-                # Enregistrer tentative de fallback
-                metric_fallback("groq", "transcribe", attempt)
-
                 with open(temp_file_path, "rb") as audio_file:
                     transcription = groq_client.audio.transcriptions.create(
                         file=audio_file,
@@ -369,14 +366,8 @@ def transcribe_audio(audio_data, language="fr"):
 
                 duration = time.time() - start_time
 
-                # Enregistrer retry stats si il y en a eu
-                if total_retry_count > 0:
-                    metric_retry(
-                        "groq",
-                        "transcribe",
-                        total_retry_count,
-                        total_backoff_ms,
-                    )
+                
+                metric_retry("groq", "transcribe", total_retry_count, total_backoff_ms)
 
                 # Alertes sur contenu problématique
                 if len(transcription.text) < 10:
@@ -437,22 +428,14 @@ def transcribe_audio(audio_data, language="fr"):
         # Fallback HTTPX en dernier recours
         logger.info("Tentative fallback HTTPX pour la transcription…")
 
-        # Enregistrer fallback HTTPX
-        metric_fallback(
-            "groq", "transcribe", AI_CONFIG['TRANSCRIBE_MAX_RETRIES'] + 1
-        )  # +1 pour HTTPX
+        # Enregistrer le fallback HTTPX
+        metric_fallback("groq", "transcribe", 1)
 
         result = _transcribe_via_httpx(temp_file_path, language)
 
         if result:
             duration = time.time() - start_time
             logger.info(f"Fallback HTTPX réussi en {duration:.2f}s")
-
-            # Enregistrer retry stats finales
-            if total_retry_count > 0:
-                metric_retry(
-                    "groq", "transcribe", total_retry_count, total_backoff_ms
-                )
 
             # VALIDATION DE LA LONGUEUR POUR LE FALLBACK HTTPX AUSSI
             is_valid, error_message = validate_transcription_length(result)
@@ -477,12 +460,6 @@ def transcribe_audio(audio_data, language="fr"):
             else:
                 reason = "httpx_fallback_failed"
 
-            # Enregistrer retry stats finales même en cas d'échec
-            if total_retry_count > 0:
-                metric_retry(
-                    "groq", "transcribe", total_retry_count, total_backoff_ms
-                )
-
             metric_fail(
                 "groq", "transcribe", int(duration * 1000), reason=reason
             )
@@ -498,7 +475,8 @@ def transcribe_audio(audio_data, language="fr"):
                     f"Impossible de supprimer le fichier temporaire: {e}"
                 )
 
-# ---------- SYSTÈME DE FALLBACK ----------
+
+# ---------- SYSTÈME DE FALLBACK pour Mistral ----------
 
 # Concrétisation paramétrable depuis settings.AI_CONFIG 
 try:
@@ -544,16 +522,12 @@ def safe_mistral_call(model, messages, operation="API call"):
     models_to_try = [model] + AI_CONFIG['FALLBACK_CHAINS'].get(model, [])
     logger.debug(f"[{operation}] Chaîne de fallback: {models_to_try}")
 
-    total_backoff_ms = 0
-    operation_key = operation.lower().replace(" ", "_")  # Pour les métriques
+    operation_key = operation.lower().replace(" ", "_")  
 
     for attempt, current_model in enumerate(models_to_try):
         try:
             attempt_start = time.time()
-            
-            # Enregistrer tentative de fallback
-            metric_fallback("mistral", operation_key, attempt + 1)
-            
+
             response = mistral_client.chat.complete(
                 model=current_model,
                 messages=messages,
@@ -561,18 +535,16 @@ def safe_mistral_call(model, messages, operation="API call"):
             )
             attempt_duration = time.time() - attempt_start
 
+            # Succès : log final avec le nombre réel de fallbacks (= attempt)
+            metric_fallback("mistral", operation_key, attempt)
+
             if attempt > 0:
                 logger.warning(f"[{operation}] Fallback utilisé: {current_model} en {attempt_duration:.2f}s")
             else:
                 logger.info(f"[{operation}] Succès avec {current_model} en {attempt_duration:.2f}s")
-            
-            # Alerte sur performance dégradée
+
             if attempt_duration > 10:
                 logger.warning(f"[{operation}] Performance dégradée: {attempt_duration:.2f}s")
-
-            # Enregistrer retry stats si il y en a eu
-            if total_backoff_ms > 0:
-                metric_retry("mistral", operation_key, attempt, total_backoff_ms)
 
             return response
 
@@ -580,7 +552,6 @@ def safe_mistral_call(model, messages, operation="API call"):
             error_msg = str(e).lower()
             attempt_duration = time.time() - attempt_start
 
-            # Erreurs qui nécessitent un fallback
             status_code, body_text = _extract_status_and_text(e)
             merged_msg = (error_msg + " " + body_text.lower()).strip()
 
@@ -593,10 +564,6 @@ def safe_mistral_call(model, messages, operation="API call"):
                 base = AI_CONFIG.get('CHAT_RETRY_BASE_DELAY_S', 0.5)
                 maxd = AI_CONFIG.get('CHAT_RETRY_MAX_DELAY_S', 3.0)
                 wait = min(base * (2 ** attempt), maxd) + random.uniform(0, 0.3)
-                wait_ms = int(wait * 1000)
-
-                # Accumuler backoff
-                total_backoff_ms += wait_ms
 
                 reason = _map_reason_from_msg(merged_msg, status_code)
 
@@ -611,9 +578,8 @@ def safe_mistral_call(model, messages, operation="API call"):
                     total_duration = time.time() - start_time
                     logger.error(f"[{operation}] Tous les fallbacks échoués après {total_duration:.2f}s (raison={reason})")
 
-                    if total_backoff_ms > 0:
-                        metric_retry("mistral", operation_key, len(models_to_try), total_backoff_ms)
-
+                    # Enregistrer les fallback (= attempt) après échec de tous les modèles
+                    metric_fallback("mistral", operation_key, attempt)
                     metric_fail("mistral", operation_key, int(total_duration * 1000), reason=reason)
                     return None
 
@@ -622,7 +588,6 @@ def safe_mistral_call(model, messages, operation="API call"):
             else:
                 logger.error(f"[{operation}] Erreur critique {current_model}: {e}")
                 raise e
-
 
     return None
 

@@ -52,13 +52,14 @@ def ai_health_view(request):
         "pipeline_durations": snap.get("pipeline_durations", {}),
         "fallbacks": snap.get("fallbacks", {}),  # Maintenant avec image incluse
         "retries": snap.get("retries", {}),
+        "errors": snap.get("errors"),
+        "totals": snap.get("totals"),
         "sse_quality": snap.get("sse_quality", {}),
+       
         
         # MÉTRIQUES BUSINESS (100% cohérentes avec images incluses)
         "business_metrics": business_metrics,
         
-        "errors": snap.get("errors"),
-        "totals": snap.get("totals"),
         "last_seen": _iso(snap.get("last_seen")),
         "notes": snap.get("notes"),
     }
