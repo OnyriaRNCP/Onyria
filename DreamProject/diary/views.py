@@ -316,25 +316,24 @@ def analyse_from_voice(request):
 
         finally:
             try:
-                if dream is not None:
-                    record_dream_trace(
-                        dream_id=dream.id,
-                        user_id=request.user.id,
-                        created_at_ts=float(dream.created_at.timestamp()) if dream.created_at else time.time(),
-                        dream_type=dream.dream_type if dream.dream_type else "",
-                        dominant_emotion=dream.dominant_emotion or "",
-                        has_image=bool(getattr(dream, "image_url", None)),
-                        total_duration_ms=int((time.time() - start_time) * 1000),
-                        started_at_ts=float(start_time),
-                        transcribe_ms=step_times.get('transcribe_end', 0) and int((step_times['transcribe_end'] - step_times['transcribe_start']) * 1000),
-                        emotion_ms=step_times.get('emotion_end', 0) and int((step_times['emotion_end'] - step_times['emotion_start']) * 1000),
-                        image_ms=step_times.get('image_end', 0) and int((step_times['image_end'] - step_times['image_start']) * 1000),
-                        interpretation_ms=step_times.get('interpretation_end', 0) and int((step_times['interpretation_end'] - step_times['interpretation_start']) * 1000),
-                        sse_completed=not aborted,
-                        sse_aborted=aborted,
-                        sse_event_count=event_count,
-                        first_event_at_ts=first_event_at_ts  # <-- ajout
-                    )
+                record_dream_trace(
+                    dream_id=dream.id if dream is not None else -1,  # -1 ou None pour signaler "pas de rêve en DB" si le rêve a échoué
+                    user_id=request.user.id,
+                    created_at_ts=float(dream.created_at.timestamp()) if (dream and dream.created_at) else time.time(),
+                    dream_type=dream.dream_type if dream else "",
+                    dominant_emotion=dream.dominant_emotion if dream else "",
+                    has_image=bool(getattr(dream, "image_url", None)) if dream else False,
+                    total_duration_ms=int((time.time() - start_time) * 1000),
+                    started_at_ts=float(start_time),
+                    transcribe_ms=step_times.get('transcribe_end', 0) and int((step_times['transcribe_end'] - step_times['transcribe_start']) * 1000),
+                    emotion_ms=step_times.get('emotion_end', 0) and int((step_times['emotion_end'] - step_times['emotion_start']) * 1000),
+                    image_ms=step_times.get('image_end', 0) and int((step_times['image_end'] - step_times['image_start']) * 1000),
+                    interpretation_ms=step_times.get('interpretation_end', 0) and int((step_times['interpretation_end'] - step_times['interpretation_start']) * 1000),
+                    sse_completed=not aborted,
+                    sse_aborted=aborted,
+                    sse_event_count=event_count,
+                    first_event_at_ts=first_event_at_ts
+                )
             except Exception as e:
                 logger.debug(f"Échec record_dream_trace: {e}")
 

@@ -342,13 +342,11 @@ def _load_complete_jsonl_snapshot() -> Dict:
                     event = rec.get("event")
                     if provider and op and event == "fallback":
                         key = f"{provider}.{op}"
-                        fallbacks = rec.get("fallbacks", 0)  # <- correspond à ce qu'on écrit dans metric_fallback()
+                        fallback_calls = int(rec.get("fallback_calls", 0))
                         bucket = fallback_data.setdefault(key, {"fallback_calls": 0})
-                        if fallbacks > 0:  # 0 = aucun fallback
-                            bucket["fallback_calls"] += fallbacks
+                        if fallback_calls > 0:
+                            bucket["fallback_calls"] += fallback_calls
                         continue
-
-
 
                     if provider and op and event == "retry":
                         key = f"{provider}.{op}"
@@ -473,7 +471,7 @@ def _load_complete_jsonl_snapshot() -> Dict:
             "avg_ms": int(round(avg)),
         }
 
-    # 6. Fallbacks & 7. SSE quality
+    # 6. SSE quality
     sse_out = {
         "total_sessions": len(sse_sessions),
         "completed_sessions": len([s for s in sse_sessions if s["completed"]]),
@@ -500,13 +498,10 @@ def _load_complete_jsonl_snapshot() -> Dict:
             sse_out["avg_ttfb_ms"] = int(sum(ttfb_values) / len(ttfb_values))
 
 
-    # 8. Totaux
+    # 7. Totaux
     total_ok = sum(counts.get("ok", 0) for counts in availability_data.values())
     total_fail = sum(counts.get("fail", 0) for counts in availability_data.values())
     total_all = total_ok + total_fail
-
-    # IMPORTANT: on ne renvoie que fallback_calls (pas total_calls) en DEV aussi
-    fallback_trimmed = {k: {"fallback_calls": v.get("fallback_calls", 0)} for k, v in fallback_data.items()}
 
     return {
         "started_at": int(first_ts) if first_ts else int(time.time()),
@@ -514,7 +509,7 @@ def _load_complete_jsonl_snapshot() -> Dict:
         "availability": availability_out,
         "latency": latency_out,
         "pipeline_durations": pipeline_out,
-        "fallbacks": fallback_trimmed,       # ← uniquement fallback_calls
+        "fallbacks": fallback_data,      
         "retries": retry_data,               # <— agrégé depuis JSONL
         "sse_quality": sse_out,
         "errors": errors_data, 
@@ -553,7 +548,7 @@ def metric_fallback(provider: str, op: str, attempt: int) -> None:
             "provider": provider,
             "op": op,
             "event": "fallback",
-            "fallbacks": attempt,  # nb de vrais fallbacks
+            "fallback_calls": attempt,  # nb de vrais fallbacks
         })
 
 def metric_retry(provider: str, op: str, retry_count: int, backoff_ms: int) -> None:
@@ -941,90 +936,3 @@ def get_env_info() -> Dict:
     return info
 
 
-class LogMetricsHandler(logging.Handler):
-    """Handler optionnel pour logs métriques."""
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            msg = record.getMessage()
-            if "[METRIC]" not in msg:
-                return
-            data = _parse_kv(msg)
-            provider = data.get("provider")
-            op = data.get("op")
-            status = data.get("status")
-            latency = _safe_int(data.get("latency_ms"))
-            reason = data.get("reason")
-            if not provider or not op or not status:
-                return
-            if status == "success":
-                _STORE.record_ok(provider, op, latency)
-            else:
-                _STORE.record_fail(provider, op, latency, reason)
-        except Exception:
-            pass
-
-
-def _parse_kv(line: str) -> Dict[str, str]:
-    """Parse simple clef=valeur après [METRIC]."""
-    out: Dict[str, str] = {}
-    try:
-        segment = line.split("[METRIC]", 1)[1]
-    except Exception:
-        return out
-    tokens = segment.replace(",", " ").strip().split()
-    for tok in tokens:
-        if "=" in tok:
-            k, v = tok.split("=", 1)
-            out[k.strip()] = v.strip()
-    return out
-
-
-def _safe_int(val: Optional[str]) -> Optional[int]:
-    """Convertit str en int prudemment."""
-    if val is None:
-        return None
-    try:
-        return int(float(val))
-    except Exception:
-        return None
-
-
-# Charger les métriques agrégées depuis .dev/dev_metrics.jsonl (si DEV)
-def _load_metrics_jsonl_into_store() -> None:
-    """
-    Rejoue les lignes de .dev/dev_metrics.jsonl dans le _STORE pour
-    agréger à travers les redémarrages en DEV.
-    (Note: ceci rejoue uniquement OK/FAIL car les fallbacks/retries sont
-    directement rechargés via _load_complete_jsonl_snapshot en mode historical.)
-    """
-    if not (_APP_ENV == "dev" and _PERSIST_METRICS):
-        return
-    try:
-        if not os.path.exists(_METRICS_PATH):
-            return
-        with open(_METRICS_PATH, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    rec = json.loads(line)
-                except Exception:
-                    continue
-                provider = rec.get("provider")
-                op = rec.get("op")
-                status = rec.get("status")
-                latency_ms = rec.get("latency_ms")
-                reason = rec.get("reason")
-                if not provider or not op or not status:
-                    continue
-                if status == "success":
-                    _STORE.record_ok(provider, op, latency_ms)
-                else:
-                    _STORE.record_fail(provider, op, latency_ms, reason)
-    except Exception:
-        # on ignore un éventuel problème de lecture pour ne pas bloquer
-        pass
-
-
-_load_metrics_jsonl_into_store()
