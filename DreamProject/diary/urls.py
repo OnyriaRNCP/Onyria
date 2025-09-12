@@ -1,6 +1,6 @@
 from django.urls import path
 from . import views
-from .metrics.views import ai_health_view
+from .metrics import views as metrics_views 
 
 urlpatterns = [
     path('', views.dream_diary_view, name='dream_diary'),
@@ -11,5 +11,6 @@ urlpatterns = [
     path('delete/<int:dream_id>/', views.delete_dream, name='delete_dream'),
     
     # Santé IA (JSON)
-    path('ai/health/', ai_health_view, name='ai_health'),
+    path('ai/health/', metrics_views.ai_health_view, name='ai_health'),
+    path("ai/health/download/", metrics_views.ai_health_download, name="ai_health_download"),
 ]
