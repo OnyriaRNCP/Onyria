@@ -8,6 +8,7 @@ import logging
 import httpx
 import random
 import unicodedata
+import concurrent.futures
 from typing import List
 from datetime import datetime, timedelta
 from django.utils import timezone
@@ -500,7 +501,7 @@ def _extract_status_and_text(e: Exception):
 
 def safe_mistral_call(model, messages, operation="API call"):
     """
-    Appel Mistral sécurisé avec système de fallback automatique.
+    Appel Mistral sécurisé avec système de fallback automatique + timeout applicatif.
     On essaie le modèle principal puis les modèles de fallback,
     avec un délai (backoff) entre chaque tentative.
     """
@@ -522,11 +523,16 @@ def safe_mistral_call(model, messages, operation="API call"):
         try:
             attempt_start = time.time()
 
-            response = mistral_client.chat.complete(
-                model=current_model,
-                messages=messages,
-                response_format={"type": "json_object"},
-            )
+            # Exécuter l'appel Mistral avec un timeout applicatif
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    mistral_client.chat.complete,
+                    model=current_model,
+                    messages=messages,
+                    response_format={"type": "json_object"},
+                )
+                response = future.result(timeout=AI_CONFIG["API_TIMEOUT"])  # timeout appliqué
+
             attempt_duration = time.time() - attempt_start
 
             # Succès : on enregistre combien de fallbacks ont été faits (0 = pas de fallback)
@@ -542,6 +548,21 @@ def safe_mistral_call(model, messages, operation="API call"):
 
             return response
 
+        except concurrent.futures.TimeoutError:
+            attempt_duration = time.time() - attempt_start
+            logger.error(f"[{operation}] TIMEOUT sur {current_model} après {attempt_duration:.2f}s")
+
+            if attempt == len(models_to_try) - 1:
+                total_duration = time.time() - start_time
+                logger.error(f"[{operation}] Tous les fallbacks échoués après {total_duration:.2f}s (raison=timeout)")
+                metric_fallback("mistral", operation_key, attempt)
+                metric_fail("mistral", operation_key, int(total_duration * 1000), reason="timeout")
+                return None
+
+            # Timeout → fallback vers modèle suivant (pas de double metric_fallback)
+            time.sleep(AI_CONFIG['FALLBACK_BASE_DELAY_S'])
+            continue
+
         except Exception as e:
             error_msg = str(e).lower()
             attempt_duration = time.time() - attempt_start
@@ -549,7 +570,7 @@ def safe_mistral_call(model, messages, operation="API call"):
             status_code, body_text = _extract_status_and_text(e)
             merged_msg = (error_msg + " " + body_text.lower()).strip()
 
-            # Ici fallbackable veut dire : "on peut tenter le modèle suivant"
+            # On peut tester le modèle suivant
             can_fallback = (
                 (status_code in AI_CONFIG['FALLBACK_STATUS']) or
                 any(k in merged_msg for k in AI_CONFIG['FALLBACK_KEYWORDS'])
@@ -573,7 +594,6 @@ def safe_mistral_call(model, messages, operation="API call"):
                     total_duration = time.time() - start_time
                     logger.error(f"[{operation}] Tous les fallbacks échoués après {total_duration:.2f}s (raison={reason})")
 
-                    # Enregistrer les fallbacks (= attempt) même en cas d'échec final
                     metric_fallback("mistral", operation_key, attempt)
                     metric_fail("mistral", operation_key, int(total_duration * 1000), reason=reason)
                     return None
@@ -585,6 +605,7 @@ def safe_mistral_call(model, messages, operation="API call"):
                 raise e
 
     return None
+
 
 # ---------- ANALYSE D'ÉMOTIONS ----------
 
