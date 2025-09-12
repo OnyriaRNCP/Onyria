@@ -295,10 +295,14 @@
             console.error('Placeholder image également inaccessible - échec système');
             handleModelFailure("{{ DREAM_ERROR_MESSAGE|escapejs }}");
           } else {
-            // Sinon, fallback vers le placeholder
-            this.src = "{% static 'img/placeholder.png' %}";
-            this.alt = "Image non disponible";
-          }
+          // Pas d'image générée → placeholder direct
+          img.src = "{% static 'img/placeholder.png' %}";
+          img.alt = "Image non disponible";
+
+          // Fix dimensions pour éviter l'étirement en prod
+          img.width = 800;
+          img.height = 600;
+        }
         };
         
         // Logique principale : image générée OU placeholder
