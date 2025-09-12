@@ -298,10 +298,6 @@
           // Pas d'image générée → placeholder direct
           img.src = "{% static 'img/placeholder.png' %}";
           img.alt = "Image non disponible";
-
-          // Fix dimensions pour éviter l'étirement en prod
-          img.width = 800;
-          img.height = 600;
         }
         };
         
