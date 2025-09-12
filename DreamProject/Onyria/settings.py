@@ -167,7 +167,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'Onyria.wsgi.application'
 
-
 # Base de données
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
@@ -185,9 +184,8 @@ else:
         }
     }
 
-
 # Validation de mot de passe
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
+# ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS").split(" ")
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -204,7 +202,6 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalisation
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
@@ -217,7 +214,6 @@ TIME_ZONE = "Europe/Paris"
 USE_I18N = True
 
 USE_TZ = True
-
 
 # Fichiers statiques (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
@@ -242,7 +238,6 @@ else:
 
 # Emplacement des sources d'assets (dossier 'static' à la racine du repo)
 STATICFILES_DIRS = [ BASE_DIR.parent / "static" ]
-
 
 # Type de clé primaire par défaut
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

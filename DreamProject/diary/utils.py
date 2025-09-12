@@ -34,7 +34,6 @@ load_dotenv()
 # Logs
 logger = logging.getLogger(__name__)
 
-
 # Récupération de la configuration centralisée
 AI_CONFIG = settings.AI_CONFIG
 BASE_DIR = settings.BASE_DIR
@@ -228,7 +227,6 @@ def _map_reason_from_msg(msg: str, status_code: int | None = None) -> str:
 
 
 # ---------- SYSTÈME DE RETRY/FALLBACK pour la transcription ----------
-
 
 def _is_retryable_transcription_error(err: Exception) -> bool:
     """Détecte les erreurs réseau/temporaires qui méritent un retry"""
@@ -806,7 +804,6 @@ def generate_image_from_text(user, prompt_text, dream_instance):
         metric_fail("mistral", "image", int(duration * 1000), reason="exception")
         return False
 
-
 # ---------- THEMATIQUE ----------
 
 
@@ -927,7 +924,6 @@ def _basic_preprocess(text: str, french_stopwords=None, stemmer=None) -> str:
 
     return ' '.join(filtered)
 
-
 def _bertopic_analysis(dream_texts: List[str], total_dreams: int):
     """Analyse BERTopic pour datasets moyens/grands (8+ rêves)"""
     # Utiliser le modèle BERTopic déjà configuré
@@ -981,7 +977,6 @@ def _bertopic_analysis(dream_texts: List[str], total_dreams: int):
     except Exception as e:
         logger.error(f"Erreur BERTopic: {e}")
         return None
-
 
 def _category_analysis(dream_texts: List[str], total_dreams: int):
     """Analyse par catégories prédéfinies pour petits datasets - version améliorée"""
@@ -1087,7 +1082,6 @@ def _category_analysis(dream_texts: List[str], total_dreams: int):
     
     return result
 
-
 def get_themes_stats_filtered(user, period=None, start_date=None, end_date=None):
     """
     Analyse les thématiques récurrentes pour une période donnée
@@ -1155,7 +1149,6 @@ def get_themes_stats_filtered(user, period=None, start_date=None, end_date=None)
         'themes_list': [theme_name.capitalize() for theme_name, _ in themes_results],
         'raw_themes_results': themes_results,
     }
-
 
 def get_themes_timeline_filtered(user, period=None, start_date=None, end_date=None):
     """
@@ -1236,7 +1229,6 @@ def get_themes_timeline_filtered(user, period=None, start_date=None, end_date=No
     logger.info(f"Timeline thématiques: {len(timeline_data)} périodes pour {len(themes_to_track)} thèmes")
     
     return timeline_data, themes_to_track
-
 
 def analyze_recurring_themes(user, min_dreams=2, min_occurrence=2):
     """
@@ -1497,9 +1489,7 @@ def get_emotions_timeline_filtered(
 
     return timeline_list, list(all_emotions)
 
-
 # ---------- NORMALISATION DES LABELS ----------
-
 
 def _strip_accents(s: str) -> str:
     """
@@ -1535,7 +1525,6 @@ def _to_str(val: Any) -> str:
         except Exception:
             return ""
     return val if isinstance(val, str) else str(val)
-
 
 # Pré-calcul de mappings normalisés (insensibles aux accents et à la casse)
 _EMO_NORM = {_strip_accents(str(k)): v for k, v in EMOTION_LABELS.items()}
