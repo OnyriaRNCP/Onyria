@@ -131,6 +131,7 @@ def get_bertopic_model():
             _bertopic_cache['available'] = False
     
     return _bertopic_cache['bertopic'], _bertopic_cache['available']
+
 # ---------- FONCTIONS UTILITAIRES ----------
 
 def read_file(file_path):
@@ -204,27 +205,33 @@ def validate_and_fix_interpretation(interpretation_data):
     logger.debug("Validation interprétation terminée avec succès")
     return fixed_interpretation
 
-# ---------- SYSTÈME DE RETRY ----------
+def _map_reason_from_msg(msg: str, status_code: int | None = None) -> str:
+    """
+    Mappe un message d'erreur ou un code HTTP vers une raison standardisée.
+    - Cherche dans les mots-clés de AI_CONFIG['ERROR_REASON_KEYWORDS']
+    - Fallback sur status_code (ex: 429 → rate_limit)
+    - Retourne 'unknown' si rien ne correspond
+    """
+    if not msg:
+        msg = ""
+    msg = msg.lower()
+
+    for reason, keywords in AI_CONFIG.get("ERROR_REASON_KEYWORDS", {}).items():
+        if any(k in msg for k in keywords):
+            return reason
+
+    if status_code == 429:
+        return "rate_limit"
+
+    return "unknown"
+
+
+# ---------- SYSTÈME DE RETRY/FALLBACK pour la transcription ----------
 
 def _is_retryable_transcription_error(err: Exception) -> bool:
     """Détecte les erreurs réseau/temporaires qui méritent un retry"""
     msg = str(err).lower()
-    keywords = [
-        "connection error",
-        "connection reset",
-        "connection aborted",
-        "timeout",
-        "temporarily unavailable",
-        "service unavailable",
-        "tls",
-        "ssl",
-        "proxy",
-        "rate limit",
-        "503",
-        "502",
-        "429",
-    ]
-    return any(k in msg for k in keywords)
+    return any(k in msg for k in AI_CONFIG['TRANSCRIBE_RETRYABLE_KEYWORDS'])
 
 def _transcribe_via_httpx(file_path: str, language: str = "fr") -> str | None:
     """
@@ -344,9 +351,6 @@ def transcribe_audio(audio_data, language="fr"):
                     f"Transcription tentative {attempt}/{AI_CONFIG['TRANSCRIBE_MAX_RETRIES']}"
                 )
 
-                # Enregistrer tentative de fallback
-                metric_fallback("groq", "transcribe", attempt)
-
                 with open(temp_file_path, "rb") as audio_file:
                     transcription = groq_client.audio.transcriptions.create(
                         file=audio_file,
@@ -360,14 +364,8 @@ def transcribe_audio(audio_data, language="fr"):
 
                 duration = time.time() - start_time
 
-                # Enregistrer retry stats si il y en a eu
-                if total_retry_count > 0:
-                    metric_retry(
-                        "groq",
-                        "transcribe",
-                        total_retry_count,
-                        total_backoff_ms,
-                    )
+                
+                metric_retry("groq", "transcribe", total_retry_count, total_backoff_ms)
 
                 # Alertes sur contenu problématique
                 if len(transcription.text) < 10:
@@ -428,22 +426,14 @@ def transcribe_audio(audio_data, language="fr"):
         # Fallback HTTPX en dernier recours
         logger.info("Tentative fallback HTTPX pour la transcription…")
 
-        # Enregistrer fallback HTTPX
-        metric_fallback(
-            "groq", "transcribe", AI_CONFIG['TRANSCRIBE_MAX_RETRIES'] + 1
-        )  # +1 pour HTTPX
+        # Enregistrer le fallback HTTPX
+        metric_fallback("groq", "transcribe", 1)
 
         result = _transcribe_via_httpx(temp_file_path, language)
 
         if result:
             duration = time.time() - start_time
             logger.info(f"Fallback HTTPX réussi en {duration:.2f}s")
-
-            # Enregistrer retry stats finales
-            if total_retry_count > 0:
-                metric_retry(
-                    "groq", "transcribe", total_retry_count, total_backoff_ms
-                )
 
             # VALIDATION DE LA LONGUEUR POUR LE FALLBACK HTTPX AUSSI
             is_valid, error_message = validate_transcription_length(result)
@@ -463,21 +453,10 @@ def transcribe_audio(audio_data, language="fr"):
             return result
         else:
             duration = time.time() - start_time
-            reason = "httpx_fallback_failed"
             if last_error is not None:
-                msg = str(last_error).lower()
-                if "rate" in msg:
-                    reason = "rate_limit"
-                elif "quota" in msg:
-                    reason = "quota"
-                elif "timeout" in msg:
-                    reason = "timeout"
-
-            # Enregistrer retry stats finales même en cas d'échec
-            if total_retry_count > 0:
-                metric_retry(
-                    "groq", "transcribe", total_retry_count, total_backoff_ms
-                )
+                reason = _map_reason_from_msg(str(last_error), None)
+            else:
+                reason = "httpx_fallback_failed"
 
             metric_fail(
                 "groq", "transcribe", int(duration * 1000), reason=reason
@@ -494,16 +473,16 @@ def transcribe_audio(audio_data, language="fr"):
                     f"Impossible de supprimer le fichier temporaire: {e}"
                 )
 
-# ---------- SYSTÈME DE FALLBACK ----------
+# ---------- SYSTÈME DE FALLBACK pour Mistral ----------
 
-# Concrétisation paramétrable depuis settings.AI_CONFIG (DRY, pas de doublon)
+# Concrétisation paramétrable depuis settings.AI_CONFIG 
 try:
-    RETRYABLE_STATUS = set(AI_CONFIG['RETRYABLE_STATUS'])
-    RETRYABLE_KEYWORDS = tuple(AI_CONFIG['RETRYABLE_KEYWORDS'])
+    FALLBACK_STATUS = set(AI_CONFIG['FALLBACK_STATUS'])
+    FALLBACK_KEYWORDS = tuple(AI_CONFIG['FALLBACK_KEYWORDS'])
 except KeyError as e:
-    logger.error(f"AI_CONFIG manquant: {e}. Règles de retry vides par sécurité.")
-    RETRYABLE_STATUS = set()
-    RETRYABLE_KEYWORDS = tuple()
+    logger.error(f"AI_CONFIG manquant: {e}. Règles de fallback vides par sécurité.")
+    FALLBACK_STATUS = set()
+    FALLBACK_KEYWORDS = tuple()
 
 def _extract_status_and_text(e: Exception):
     status = getattr(e, "status_code", None)
@@ -519,16 +498,11 @@ def _extract_status_and_text(e: Exception):
 
 def safe_mistral_call(model, messages, operation="API call"):
     """
-    Appel Mistral sécurisé avec système de fallback automatique
-
-    Args:
-        model: Modèle principal à utiliser
-        messages: Messages pour l'API
-        operation: Description de l'opération (pour les logs)
-
-    Returns:
-        Response de l'API ou None si tous les fallbacks échouent
+    Appel Mistral sécurisé avec système de fallback automatique.
+    On essaie le modèle principal puis les modèles de fallback,
+    avec un délai (backoff) entre chaque tentative.
     """
+
     if mistral_client is None:
         logger.error(f"[{operation}] Client Mistral non initialisé - MISTRAL_API_KEY manquante")
         return None
@@ -536,20 +510,16 @@ def safe_mistral_call(model, messages, operation="API call"):
     logger.info(f"[{operation}] Démarrage avec {model}")
     start_time = time.time()
 
-    # Utilisation de la configuration centralisée pour les fallbacks
+    # Liste des modèles à essayer : principal + fallbacks
     models_to_try = [model] + AI_CONFIG['FALLBACK_CHAINS'].get(model, [])
     logger.debug(f"[{operation}] Chaîne de fallback: {models_to_try}")
 
-    total_backoff_ms = 0
-    operation_key = operation.lower().replace(" ", "_")  # Pour les métriques
+    operation_key = operation.lower().replace(" ", "_")  
 
     for attempt, current_model in enumerate(models_to_try):
         try:
             attempt_start = time.time()
-            
-            # Enregistrer tentative de fallback
-            metric_fallback("mistral", operation_key, attempt + 1)
-            
+
             response = mistral_client.chat.complete(
                 model=current_model,
                 messages=messages,
@@ -557,18 +527,16 @@ def safe_mistral_call(model, messages, operation="API call"):
             )
             attempt_duration = time.time() - attempt_start
 
+            # Succès : on enregistre combien de fallbacks ont été faits (0 = pas de fallback)
+            metric_fallback("mistral", operation_key, attempt)
+
             if attempt > 0:
                 logger.warning(f"[{operation}] Fallback utilisé: {current_model} en {attempt_duration:.2f}s")
             else:
                 logger.info(f"[{operation}] Succès avec {current_model} en {attempt_duration:.2f}s")
-            
-            # Alerte sur performance dégradée
+
             if attempt_duration > 10:
                 logger.warning(f"[{operation}] Performance dégradée: {attempt_duration:.2f}s")
-
-            # Enregistrer retry stats si il y en a eu
-            if total_backoff_ms > 0:
-                metric_retry("mistral", operation_key, attempt, total_backoff_ms)
 
             return response
 
@@ -576,60 +544,37 @@ def safe_mistral_call(model, messages, operation="API call"):
             error_msg = str(e).lower()
             attempt_duration = time.time() - attempt_start
 
-            # Erreurs qui nécessitent un fallback
             status_code, body_text = _extract_status_and_text(e)
             merged_msg = (error_msg + " " + body_text.lower()).strip()
 
-            retryable = (
-                (status_code in RETRYABLE_STATUS) or
-                any(k in merged_msg for k in RETRYABLE_KEYWORDS) or
-                any(k in merged_msg for k in [
-                    "insufficient_quota",
-                    "quota_exceeded",
-                    "rate_limit",
-                    "model_not_found",
-                    "service_unavailable",
-                    "timeout",
-                ])
+            # Ici fallbackable veut dire : "on peut tenter le modèle suivant"
+            can_fallback = (
+                (status_code in AI_CONFIG['FALLBACK_STATUS']) or
+                any(k in merged_msg for k in AI_CONFIG['FALLBACK_KEYWORDS'])
             )
 
-            if retryable:
-                base = AI_CONFIG.get('CHAT_RETRY_BASE_DELAY_S', 0.5)
-                maxd = AI_CONFIG.get('CHAT_RETRY_MAX_DELAY_S', 3.0)
+            if can_fallback:
+                base = AI_CONFIG.get('CHAT_FALLBACK_BASE_DELAY_S', 0.5)
+                maxd = AI_CONFIG.get('CHAT_FALLBACK_MAX_DELAY_S', 3.0)
                 wait = min(base * (2 ** attempt), maxd) + random.uniform(0, 0.3)
-                wait_ms = int(wait * 1000)
-                
-                # Accumuler backoff
-                total_backoff_ms += wait_ms
 
-                if "quota" in merged_msg:
-                    logger.warning(f"[{operation}] QUOTA ATTEINT - {current_model}")
-                elif "rate_limit" in merged_msg or status_code == 429:
-                    logger.warning(f"[{operation}] RATE LIMIT - {current_model}")
-                else:
-                    logger.warning(f"[{operation}] Erreur {current_model}: {e}")
+                reason = _map_reason_from_msg(merged_msg, status_code)
+
+                log_messages = {
+                    "quota": f"[{operation}] QUOTA ATTEINT - {current_model}",
+                    "rate_limit": f"[{operation}] RATE LIMIT - {current_model}",
+                }
+
+                logger.warning(log_messages.get(reason, f"[{operation}] Erreur {current_model}: {e}"))
 
                 if attempt == len(models_to_try) - 1:
                     total_duration = time.time() - start_time
-                    reason = type(e).__name__.lower()
-
-                    if "quota" in merged_msg:
-                        reason = "quota"
-                    elif "rate_limit" in merged_msg or status_code == 429:
-                        reason = "rate_limit"
-                    elif "timeout" in merged_msg:
-                        reason = "timeout"
-
                     logger.error(f"[{operation}] Tous les fallbacks échoués après {total_duration:.2f}s (raison={reason})")
 
-                    if total_backoff_ms > 0:
-                        metric_retry("mistral", operation_key, len(models_to_try), total_backoff_ms)
-
-                    # Enregistrer l'échec final
+                    # Enregistrer les fallbacks (= attempt) même en cas d'échec final
+                    metric_fallback("mistral", operation_key, attempt)
                     metric_fail("mistral", operation_key, int(total_duration * 1000), reason=reason)
-
                     return None
-
 
                 time.sleep(wait)
                 continue
@@ -846,12 +791,7 @@ def generate_image_from_text(user, prompt_text, dream_instance):
             reason = "unknown"
 
             # Mapping cohérent avec safe_mistral_call
-            if "insufficient_quota" in error_msg or "quota" in error_msg:
-                reason = "quota"
-            elif "rate_limit" in error_msg or "too many requests" in error_msg or "429" in error_msg:
-                reason = "rate_limit"
-            elif "timeout" in error_msg:
-                reason = "timeout"
+            reason = _map_reason_from_msg(error_msg, None)
 
             duration = time.time() - start_time
             logger.error(f"Erreur image ({reason}) après {duration:.2f}s: {e}")
@@ -1618,3 +1558,41 @@ def format_emotion_label(val: Any) -> str:
 def format_dream_type_label(val: Any) -> str:
     """Ex: 'CAUCHEMAR', 'cauchemar', 'Cauchemàr' -> 'Cauchemar' (via DREAM_TYPE_LABELS si présent)"""
     return _normalize_label(val, DREAM_TYPE_LABELS)
+
+def format_interpretation(raw):
+    """
+    Normalise l'interprétation d'un rêve pour garantir un format stable.
+    - raw peut être une string JSON ou déjà un dict
+    - Retourne toujours un dict avec les 4 clés attendues
+    """
+    if not raw:
+        return {
+            "Émotionnelle": "Interprétation non disponible",
+            "Symbolique": "Interprétation non disponible",
+            "Cognitivo-scientifique": "Interprétation non disponible",
+            "Freudien": "Interprétation non disponible",
+        }
+
+    # Si c’est une string JSON → parser
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return {
+                "Émotionnelle": "Format invalide",
+                "Symbolique": "Format invalide",
+                "Cognitivo-scientifique": "Format invalide",
+                "Freudien": "Format invalide",
+            }
+
+    # Si ce n’est pas un dict → fallback
+    if not isinstance(raw, dict):
+        return {
+            "Émotionnelle": str(raw),
+            "Symbolique": str(raw),
+            "Cognitivo-scientifique": str(raw),
+            "Freudien": str(raw),
+        }
+
+    # Normalisation via validate_and_fix_interpretation()
+    return validate_and_fix_interpretation(raw)
