@@ -272,16 +272,7 @@
           p.appendChild(strong);
           
           // Extraction robuste du contenu (gestion formats variables)
-          let content;
-          if (typeof val === 'string') {
-            content = val;
-          } else if (val && val.contenu) {
-            content = val.contenu;
-          } else if (val && val.content) {
-            content = val.content;
-          } else {
-            content = String(val);
-          }
+          const content = val;
           p.appendChild(document.createTextNode(` : ${content}`));
           interpretation.appendChild(p);
         }
@@ -293,7 +284,7 @@
       case 'image':
         imageRevee.innerHTML = "";
         const img = document.createElement("img");
-        img.className = "pastel-image w-full aspect-[4/3] object-cover mx-auto";
+        img.className = "pastel-image dream-image";
         
         // Gestion d'erreur de chargement cohérente avec le système global
         img.onerror = function() {
@@ -304,10 +295,10 @@
             console.error('Placeholder image également inaccessible - échec système');
             handleModelFailure("{{ DREAM_ERROR_MESSAGE|escapejs }}");
           } else {
-            // Sinon, fallback vers le placeholder
-            this.src = "{% static 'img/placeholder.png' %}";
-            this.alt = "Image non disponible";
-          }
+          // Pas d'image générée → placeholder direct
+          img.src = "{% static 'img/placeholder.png' %}";
+          img.alt = "Image non disponible";
+        }
         };
         
         // Logique principale : image générée OU placeholder

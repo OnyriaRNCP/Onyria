@@ -1,4 +1,5 @@
-from django.http import JsonResponse
+import json
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_GET
 from django.contrib.admin.views.decorators import staff_member_required
 from datetime import datetime, timezone
@@ -24,8 +25,9 @@ def ai_health_view(request):
     DEV: TOUTES les données depuis JSONL (dev_metrics.jsonl + dev_traces.jsonl)
     PROD: TOUTES les données depuis la session active
     """
-    snap = get_snapshot()  # Maintenant 100% cohérent selon l'env
+    snap = get_snapshot()
     env = get_env_info()
+    business_metrics = calculate_business_metrics()
 
     # dreams_total : cohérent avec les données du snapshot
     dreams_total = 0
@@ -36,9 +38,6 @@ def ai_health_view(request):
         # PROD: depuis session
         interp = snap.get("availability", {}).get("mistral.interpretation", {})
         dreams_total = int(interp.get("ok", 0))
-
-    # Métriques business (maintenant 100% cohérentes avec images incluses)
-    business_metrics = calculate_business_metrics()
 
     data = {
         "environment": env,
@@ -52,14 +51,29 @@ def ai_health_view(request):
         "pipeline_durations": snap.get("pipeline_durations", {}),
         "fallbacks": snap.get("fallbacks", {}),  # Maintenant avec image incluse
         "retries": snap.get("retries", {}),
+        "errors": snap.get("errors"),
+        "totals": snap.get("totals"),
         "sse_quality": snap.get("sse_quality", {}),
+       
         
         # MÉTRIQUES BUSINESS (100% cohérentes avec images incluses)
         "business_metrics": business_metrics,
         
-        "errors": snap.get("errors"),
-        "totals": snap.get("totals"),
         "last_seen": _iso(snap.get("last_seen")),
         "notes": snap.get("notes"),
     }
     return JsonResponse(data)
+
+@staff_member_required
+def ai_health_download(request):
+    """Vue pour télécharger les métriques en JSON."""
+    data = {
+        "env": get_env_info(),
+        "metrics": get_snapshot(),
+        "business": calculate_business_metrics(),
+    }
+    json_str = json.dumps(data, indent=2, ensure_ascii=False)
+
+    response = HttpResponse(json_str, content_type="application/json")
+    response["Content-Disposition"] = 'attachment; filename="ai_metrics.json"'
+    return response
