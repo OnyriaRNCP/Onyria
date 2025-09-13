@@ -15,10 +15,9 @@ from django.test import TestCase
 from django.contrib.auth import get_user_model
 from unittest.mock import patch, MagicMock, mock_open
 import json
-import time
-import tempfile
 import socket
 import os
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 
 from ..models import Dream
 from ..utils import (
@@ -937,6 +936,23 @@ class SafeMistralCallTest(TestCase):
         for call in calls:
             call_kwargs = call[1]
             self.assertEqual(call_kwargs['response_format'], {"type": "json_object"})
+
+    @patch('diary.utils.mistral_client')
+    def test_safe_mistral_call_timeout_error(self, mock_mistral_client):
+        """
+        Test spécifique du timeout applicatif avec ThreadPoolExecutor.
+        
+        Objectif : Vérifier que concurrent.futures.TimeoutError est bien géré
+        et que safe_mistral_call retourne None après échec complet.
+        """
+        # Simuler un TimeoutError renvoyé par future.result()
+        mock_mistral_client.chat.complete.side_effect = FuturesTimeoutError("API call timed out")
+        
+        messages = [{"role": "user", "content": "test timeout"}]
+        result = safe_mistral_call("mistral-large-latest", messages, "Test TimeoutError")
+        
+        # Doit retourner None après échec complet
+        self.assertIsNone(result)
 
 
 class AIFunctionsIntegrationTest(TestCase):
