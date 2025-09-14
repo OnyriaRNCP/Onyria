@@ -1,26 +1,231 @@
+{% block content %}
+  <!-- Contenu accueil par défaut -->
+{% endblock %}
+
 {% load static %}
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{% block title %}Onyria{% endblock %}</title>
+  <meta charset="UTF-8">
+  <title>Onyria - Journal de Rêves</title>
+<!-- Tailwind CSS compilé localement -->
+  <link rel="stylesheet" href="{% static 'css/tailwind.min.css' %}">  <style>
+    /* ===== Animations celery améliorées ===== */
+    @keyframes celeryMove {
+      0% { transform: translateY(0) rotate(0deg) scale(1); }
+      25% { transform: translateY(-10px) rotate(1deg) scale(1.03); }
+      50% { transform: translateY(-18px) rotate(0deg) scale(1.05); }
+      75% { transform: translateY(-8px) rotate(-0.5deg) scale(1.02); }
+      100% { transform: translateY(0) rotate(0deg) scale(1); }
+    }
 
-  <!-- Tailwind CSS compilé localement -->
-  <link rel="stylesheet" href="{% static 'css/tailwind.min.css' %}">
+    @keyframes navFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-3px); }
+    }
 
+    @keyframes backgroundFlow {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    @keyframes sparkle {
+      0%, 100% { opacity: 0.3; transform: scale(0.8); }
+      50% { opacity: 1; transform: scale(1.2); }
+    }
+
+    .logo-celery {
+      animation: celeryMove 6s infinite ease-in-out;
+      filter: drop-shadow(0 8px 20px rgba(147, 51, 234, 0.3));
+    }
+
+    /* ===== Sidebar avec effets celery ===== */
+    .sidebar-simple {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 280px;
+      height: 100vh;
+      background: linear-gradient(45deg, #f8f4ff, #f0e8ff, #e8dfff, #f5f0ff);
+      background-size: 300% 300%;
+      animation: backgroundFlow 8s ease infinite;
+      border-right: 2px solid #d8c6f5;
+      box-shadow: 2px 0 15px rgba(147, 51, 234, 0.15);
+      z-index: 100;
+    }
+
+    .nav-container {
+      padding: 2rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      height: calc(100vh - 120px);
+    }
+
+    .nav-footer {
+      padding: 1rem;
+      border-top: 1px solid rgba(147, 51, 234, 0.2);
+      margin-top: auto;
+    }
+
+    .nav-button {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+      background: rgba(255, 255, 255, 0.9);
+      border: 2px solid #e0d4f5;
+      border-radius: 12px;
+      text-decoration: none;
+      color: #4e3f86;
+      font-weight: 500;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      animation: navFloat 4s infinite ease-in-out;
+      backdrop-filter: blur(10px);
+    }
+
+    /* Délais d'animation pour les boutons */
+    .nav-button:nth-child(1) { animation-delay: 0s; }
+    .nav-button:nth-child(2) { animation-delay: 0.5s; }
+    .nav-button:nth-child(3) { animation-delay: 1s; }
+    .nav-button:nth-child(4) { animation-delay: 1.5s; }
+
+    .nav-button:hover {
+      background: rgba(245, 240, 255, 0.95);
+      border-color: #d8c6f5;
+      transform: translateY(-4px) scale(1.02);
+      box-shadow: 0 6px 15px rgba(147, 51, 234, 0.2);
+      animation-play-state: paused;
+    }
+
+    .nav-button.active {
+      background: rgba(240, 232, 255, 0.95);
+      border-color: #b9a8ec;
+      color: #4e3f86;
+      font-weight: 600;
+      box-shadow: 0 4px 12px rgba(147, 51, 234, 0.25);
+    }
+
+    .logout-button {
+      background: rgba(255, 245, 245, 0.9);
+      border-color: #fca5a5;
+      color: #dc2626;
+    }
+
+    .logout-button:hover {
+      background: rgba(254, 226, 226, 0.95);
+      border-color: #f87171;
+      box-shadow: 0 6px 15px rgba(220, 38, 38, 0.2);
+    }
+
+    .nav-icon {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+      stroke-width: 2;
+    }
+
+    .nav-text {
+      font-size: 1rem;
+      line-height: 1.2;
+    }
+
+    /* ===== Arrière-plan avec effets ===== */
+    body {
+      background: linear-gradient(135deg, #faf5ff 0%, #f8f4ff 25%, #f0e8ff 50%, #f5f0ff 75%, #faf5ff 100%);
+      background-size: 400% 400%;
+      animation: backgroundFlow 15s ease infinite;
+      min-height: 100vh;
+      font-family: 'Schibsted Grotesk', sans-serif;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Particules flottantes */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: 
+        radial-gradient(circle at 20% 30%, rgba(147, 51, 234, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 80% 70%, rgba(236, 72, 153, 0.08) 0%, transparent 45%),
+        radial-gradient(circle at 50% 20%, rgba(99, 102, 241, 0.06) 0%, transparent 40%);
+      animation: sparkle 6s infinite ease-in-out;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* ===== Contenu principal centré ===== */
+    .content-area {
+      margin-left: 280px;
+      min-height: 100vh;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      z-index: 10;
+    }
+
+    .welcome-container {
+      text-align: center;
+      max-width: 500px;
+      animation: navFloat 8s infinite ease-in-out;
+      animation-delay: 2s;
+    }
+
+    .welcome-title {
+      font-size: 2.5rem;
+      font-weight: 300;
+      color: #6b46c1;
+      margin-bottom: 1.5rem;
+      line-height: 1.2;
+    }
+
+    .welcome-text {
+      font-size: 1.2rem;
+      color: #8b5cf6;
+      line-height: 1.6;
+      margin-bottom: 2rem;
+    }
+
+    /* Étoiles décoratives */
+    .stars {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .star {
+      font-size: 1.5rem;
+      color: #c4b5fd;
+      animation: sparkle 3s infinite ease-in-out;
+    }
+
+    .star:nth-child(1) { animation-delay: 0s; }
+    .star:nth-child(2) { animation-delay: 1s; }
+    .star:nth-child(3) { animation-delay: 2s; }
+
+    /* ===== Responsive ===== */
+    @media (max-width: 1024px) {
+      .sidebar-simple {
+        display: none;
+      }
+      
+      .content-area {
+        margin-left: 0;
+      }
+    }
+  </style>
 </head>
-
-<body class="bg-pastel-baby-powder min-h-screen font-grotesk">
-  <!-- Include Sidebar -->
-  {% include 'diary/sidebar.html' %}
-
-  <!-- Contenu principal décalé -->
-  <div class="content-area min-h-screen flex items-center justify-center px-4 sm:px-6 py-8">
-    <div class="w-full max-w-4xl mx-auto bg-white bg-opacity-80 backdrop-blur rounded-xl shadow-[0_4px_10px_rgba(0,0,0,0.1),_0_-4px_8px_rgba(0,0,0,0.05)] px-6 sm:px-8 md:px-10 py-8">
-      {% block content %}
-      {% endblock %}
-    </div>
-  </div>
-</body>
-</html>
+<body>
+  
+  

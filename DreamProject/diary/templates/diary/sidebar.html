@@ -1,80 +1,74 @@
 {% load static %}
 
 <!-- templates/diary/sidebar.html -->
-<div class="sidebar fixed left-0 top-0 h-full w-62 bg-white border-r border-gray-200 shadow-lg z-50 flex flex-col">
-  <!-- Logo/Header -->
-  <div class="p-6 border-b border-gray-100 flex justify-center">
-    <a href="{% url 'dream_diary' %}" class="transition-opacity duration-200 hover:opacity-80">
-      <img src="{% static 'img/Logo_ONYRIA.png' %}" alt="Onyria" class="h-[5.5rem] w-auto">
-    </a>
-  </div>
-
+<div class="sidebar-simple">
   <!-- Navigation principale -->
-  <nav class="sidebar-nav px-4 py-6 space-y-2 overflow-y-auto flex-1">
-    <!-- Journal des rêves -->
-    <a href="{% url 'dream_diary' %}" class="sidebar-item {% if request.resolver_match.url_name == 'dream_diary' %}active{% endif %}">
-      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+  <nav class="nav-container">
+    
+    <!-- 1. Journal des rêves -->
+    <a href="{% url 'dream_diary' %}" class="nav-button {% if request.resolver_match.url_name == 'dream_diary' %}active{% endif %}">
+      <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+          d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253">
+        </path>
       </svg>
-      <span>Journal des rêves</span>
+      <span class="nav-text">Journal des rêves</span>
     </a>
 
-    <!-- Analyse vocale -->
-    <a href="{% url 'dream_recorder' %}" class="sidebar-item {% if request.resolver_match.url_name == 'dream_recorder' %}active{% endif %}">
-      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+    <!-- 2. Enregistrer un rêve -->
+    <a href="{% url 'dream_recorder' %}" class="nav-button {% if request.resolver_match.url_name == 'dream_recorder' %}active{% endif %}">
+      <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+          d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z">
+        </path>
       </svg>
-      <span>Enregistrer un rêve</span>
+      <span class="nav-text">Enregistrer un rêve</span>
     </a>
 
-    <!-- Suivi des rêves -->
-    <a href="{% url 'dream_followup' %}" class="sidebar-item {% if request.resolver_match.url_name == 'dream_followup' %}active{% endif %}">
-      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+    <!-- 3. Suivi des rêves -->
+    <a href="{% url 'dream_followup' %}" class="nav-button {% if request.resolver_match.url_name == 'dream_followup' %}active{% endif %}">
+      <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+          d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
+        </path>
       </svg>
-      <span>Suivi de mes rêves</span>
+      <span class="nav-text">Suivi des rêves</span>
     </a>
-  </nav> <!-- ✅ fermeture ajoutée ici -->
 
-  <!-- Actions utilisateur (en bas, dans le flux) -->
-  <div class="sidebar-footer p-4 border-t border-gray-100 space-y-2">
+    <!-- 4. Mon profil -->
     {% if user.is_authenticated %}
-      <!-- Profil/Compte utilisateur -->
-      <a href="{% url 'account_management' %}" class="sidebar-item {% if request.resolver_match.url_name == 'account_management' %}active{% endif %}">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+      <a href="{% url 'account_management' %}" class="nav-button {% if request.resolver_match.url_name == 'account_management' %}active{% endif %}">
+        <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+            d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z">
+          </path>
         </svg>
-        <span>{{ user.username }}</span>
+        <span class="nav-text">{{ user.username }}</span>
       </a>
-
-      <!-- Déconnexion -->
-    <form method="post" action="{% url 'logout' %}">
-    {% csrf_token %}
-    <button type="submit" class="sidebar-item logout-btn w-full text-left">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-        </svg>
-        <span>Déconnexion</span>
-    </button>
-    </form>
-
     {% else %}
-      <!-- Connexion -->
-      <a href="{% url 'login' %}" class="sidebar-item">
-        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-          <path fill-rule="evenodd" d="M3 3a1 1 0 011 1v12a1 1 0 11-2 0V4a1 1 0 011-1zm7.707 3.293a1 1 0 010 1.414L9.414 9H17a1 1 0 110 2H9.414l1.293 1.293a1 1 0 01-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+      <a href="{% url 'login' %}" class="nav-button">
+        <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1">
+          </path>
         </svg>
-        <span>Connexion</span>
-      </a>
-
-      <!-- Inscription -->
-      <a href="{% url 'register' %}" class="sidebar-item">
-        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-          <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z"></path>
-        </svg>
-        <span>Inscription</span>
+        <span class="nav-text">Connexion</span>
       </a>
     {% endif %}
-  </div>
+
+  </nav>
+
+  <!-- Bouton de déconnexion en bas -->
+  {% if user.is_authenticated %}
+    <div class="nav-footer">
+      <a href="{% url 'logout' %}" class="nav-button logout-button">
+        <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1">
+          </path>
+        </svg>
+        <span class="nav-text">Déconnexion</span>
+      </a>
+    </div>
+  {% endif %}
 </div>

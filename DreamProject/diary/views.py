@@ -25,6 +25,10 @@ from .constants import EMOTION_LABELS, DREAM_TYPE_LABELS, DREAM_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
 
+@login_required
+def home(request):
+    return render(request, 'diary/home.html')
+
 # ---------- Normalisation labels : garantit une CHAÎNE ----------
 def _as_str_label(val):
     """
@@ -347,3 +351,53 @@ def get_date_range_display(period, start_date=None, end_date=None):
     }
 
     return period_labels.get(period, 'Toutes les données')
+
+
+@login_required
+def home(request):
+    """Page présentant les plans & tarifs"""
+    plans = [
+        {
+            "name": "Freemium",
+            "price": "0€",
+            "features": [
+                "4 rêves par mois",
+                "Génération d'image",
+            ],
+            "target": "Nouveaux utilisateurs curieux",
+        },
+        {
+            "name": "Basic",
+            "price": "5.99€/mois",
+            "features": [
+                "Jusqu'à 8 rêves par mois",
+                "Génération d'image",
+                "Interprétation symbolique des rêves",
+            ],
+            "target": "Rêveurs occasionnels",
+        },
+        {
+            "name": "Standard",
+            "price": "9.99€/mois",
+            "features": [
+                "Jusqu'à 30 rêves par mois",
+                "Génération d'image",
+                "Interprétation symbolique",
+                "Profil rêveur",
+            ],
+            "target": "Rêveurs réguliers",
+        },
+        {
+            "name": "Premium",
+            "price": "14.99€/mois",
+            "features": [
+                "Rêves illimités",
+                "Génération d'image",
+                "Interprétation symbolique",
+                "Profil rêveur",
+                "Dashboard de suivi des rêves",
+            ],
+            "target": "Rêveurs intensifs",
+        },
+    ]
+    return render(request, "diary/home.html", {"plans": plans})

@@ -1,0 +1,38 @@
+{% extends "diary/base.html" %}
+{% load static %}
+
+{% block title %}Nos offres{% endblock %}
+
+{% block content %}
+
+<!-- Titre -->
+<h1 class="text-3xl text-center text-black mb-8">Choisis ton plan</h1>
+
+<!-- Conteneur des cartes -->
+<div class="flex flex-wrap justify-center gap-6">
+
+  {% for plan in plans %}
+  <div class="bg-white rounded-2xl shadow-lg p-6 w-72 hover:scale-105 transform transition duration-200">
+    <!-- Nom du plan -->
+    <h2 class="text-xl font-bold text-[#4e3f86] mb-2 text-center">{{ plan.name }}</h2>
+    <!-- Prix -->
+    <p class="text-2xl font-semibold text-center mb-4">{{ plan.price }}</p>
+    <!-- Features -->
+    <ul class="mb-4 space-y-2 text-sm md:text-base">
+      {% for feature in plan.features %}
+      <li class="flex items-center gap-2">
+        <img src="{% static 'img/check.svg' %}" alt="✓" class="w-4 h-4">
+        {{ feature }}
+      </li>
+      {% endfor %}
+    </ul>
+    <!-- Cible -->
+    <p class="text-xs text-gray-600 mb-4 text-center"><strong>Cible :</strong> {{ plan.target }}</p>
+    <!-- Bouton -->
+    <a href="#" class="block text-center bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl py-2 font-semibold hover:opacity-90 transition">Choisir</a>
+  </div>
+  {% endfor %}
+
+</div>
+
+{% endblock %}

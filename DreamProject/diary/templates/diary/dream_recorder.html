@@ -1,374 +1,550 @@
-{% extends "diary/base.html" %}
-{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enregistrement vocal - Onyria</title>
+    <style>
+        /* Intégration de vos styles CSS existants */
+        @font-face {
+          font-family: 'Schibsted Grotesk';
+          src: url('data:font/woff2;base64,') format('woff2');
+          font-weight: 400;
+          font-style: normal;
+          font-display: swap;
+        }
 
-{% block title %}Analyse vocale du rêve{% endblock %}
+        :root{
+          --brand-50:  #f8f4fe;
+          --brand-75:  #f5f0ff;
+          --brand-100: #f0eafe;
+          --brand-200: #d8c6f5;
+          --brand-300: #cdbef4;
+          --brand-400: #b9a8ec;
+          --brand-800: #4e3f86;
 
-{% block content %}
+          --gray-400: #9ca3af;
+          --gray-700: #374151;
+          --purple-200: #d9d1fa;
+          --purple-600: #7961dd;
 
-<!-- Titre -->
-<h1 class="text-3xl text-center text-black mb-8">Raconte ton rêve à voix haute</h1>
+          --shadow-inset-btn: inset 0 3px 3px rgba(255,255,255,.7), inset 0 -4px 7px rgba(0,0,0,.12), 0 6px 14px rgba(0,0,0,.12);
+          --shadow-inset-btn-sm: inset 0 5px 8px rgba(255,255,255,.75), inset 0 -2px 4px rgba(0,0,0,.05), 0 5px 10px rgba(0,0,0,.07);
+          --shadow-inset-card: inset 0 4px 8px rgba(255,255,255,.6), inset 0 -2px 4px rgba(0,0,0,.04), 0 2px 6px rgba(0,0,0,.05);
+        }
 
-<!-- Bouton d'enregistrement avec 3 états visuels -->
-<div class="flex justify-center">
-  <button id="recordBtn" class="btn-ballon-record">
-    <!-- Icône micro (état initial) -->
-    <svg id="micIcon" class="w-8 h-8 text-[#4e3f86]" fill="currentColor" viewBox="0 0 20 20">
-      <path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clip-rule="evenodd"></path>
-    </svg>
-    <!-- Icône stop (pendant enregistrement) -->
-    <svg id="stopIcon" class="w-6 h-6 text-[#4e3f86] hidden" fill="currentColor" viewBox="0 0 24 24">
-      <rect x="6" y="6" width="12" height="12" rx="2"></rect>
-    </svg>
-    <!-- Icône loading (pendant traitement) -->
-    <svg id="loadingIcon" class="w-8 h-8 text-[#4e3f86] hidden animate-spin" fill="none" viewBox="0 0 24 24">
-      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-      <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-    </svg>
-  </button>
-</div>
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+        }
 
-<!-- Timer visible pendant l'enregistrement -->
-<div id="timer" class="text-center text-gray-600 mt-4 hidden text-xs sm:text-sm md:text-base font-normal">
-  Temps : <span id="timerText" class="font-mono">00:00</span>
-</div>
+        body {
+          font-family: 'Schibsted Grotesk', sans-serif;
+          min-height: 100vh;
+          background: linear-gradient(135deg, var(--brand-50) 0%, var(--brand-75) 25%, var(--brand-100) 50%, var(--brand-200) 100%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 1.5rem;
+        }
 
-<!-- Messages de statut temporaires -->
-<div id="status" class="text-center text-sm sm:text-base md:text-lg text-gray-700 hidden font-normal"></div>
+        .container {
+          width: 100%;
+          max-width: 28rem;
+        }
 
-<!-- Bloc 1 : Transcription de l'audio (s'affiche en premier) -->
-<div class="mb-6 hidden pastel-yellow" id="sectionTranscription">
-  <h2 class="text-sm sm:text-base md:text-lg font-semibold mb-2">Transcription</h2>
-  <div id="transcriptionText" class="text-xs sm:text-sm md:text-base font-normal leading-relaxed">
-    Ton texte apparaîtra ici.
-  </div>
-</div>
+        .logo-section {
+          text-align: center;
+          margin-bottom: 2rem;
+        }
 
-<!-- Bloc 2 : Analyse émotionnelle (s'affiche en deuxième) -->
-<div class="mb-6 hidden flex gap-4" id="sectionEmotionDream">
-  <div class="pastel-baby-powder w-1/2">
-    <h3 class="text-sm sm:text-base md:text-lg font-semibold mb-2">Émotion dominante</h3>
-    <div id="emotionDominante" class="text-xs sm:text-sm md:text-base font-normal leading-relaxed"></div>
-  </div>
-  <div class="pastel-vanilla w-1/2">
-    <h3 class="text-sm sm:text-base md:text-lg font-semibold mb-2">Type de rêve</h3>
-    <div id="dreamType" class="text-xs sm:text-sm md:text-base font-normal leading-relaxed"></div>
-  </div>
-</div>
+        .logo-circle {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 5rem;
+          height: 5rem;
+          border-radius: 50%;
+          margin-bottom: 1rem;
+          background: linear-gradient(to bottom, var(--brand-75), var(--brand-200));
+          border: 2px solid var(--brand-400);
+          color: var(--brand-800);
+          font-size: 1.5rem;
+          font-weight: bold;
+          box-shadow: var(--shadow-inset-btn-sm);
+        }
 
-<!-- Bloc 3 : Image générée par IA (s'affiche en troisième) -->
-<div id="sectionImage" class="hidden mb-6">
-  <div id="imageRevee" class="flex justify-center"></div>
-</div>
+        .main-title {
+          font-size: 1.875rem;
+          color: var(--brand-800);
+          font-weight: 400;
+          margin-bottom: 0.5rem;
+        }
 
-<!-- Bloc 4 : Interprétation détaillée (s'affiche en dernier) -->
-<div class="hidden pastel-champagne mb-6" id="sectionInterpretation">
-  <h3 class="text-sm sm:text-base md:text-lg font-semibold mb-2">Interprétation</h3>
-  <div id="interpretation" class="text-xs sm:text-sm md:text-base font-normal leading-relaxed space-y-4 text-left"></div>
-</div>
+        .subtitle {
+          color: var(--brand-800);
+          font-size: 0.875rem;
+          font-weight: 400;
+          opacity: 0.7;
+        }
 
-<!-- Avertissement légal -->
-<div id="sectionDisclaimer" class="hidden mt-3">
-  <details class="ai-disclaimer">
-    <summary class="ai-disclaimer__summary flex items-center gap-2">
-      <img src="{% static 'img/warning.png' %}" class="w-4 h-4 md:w-5 md:h-5 align-middle" aria-hidden="true" alt="">
-      <span class="ai-disclaimer__title">Avertissement aux Onyriens</span>
-    </summary>
-    <div class="ai-disclaimer__content">
-      <p>Les interprétations qui vous sont présentées sont générées par une intelligence artificielle et tirent leurs sources d'origines diverses. Elles visent avant tout à éveiller votre curiosité et à nourrir votre exploration personnelle du monde des rêves.</p>
-      <p class="mt-1">Ces suggestions peuvent comporter des imprécisions ou des approximations : elles ne doivent en aucun cas être considérées comme des conseils médicaux, psychologiques ou thérapeutiques.</p>
-      <p class="mt-1">Si un rêve vous questionne profondément ou suscite une émotion persistante, n'hésitez pas à en parler avec un professionnel qualifié.</p>
+        .recording-area {
+          text-align: center;
+          display: flex;
+          flex-direction: column;
+          gap: 1.5rem;
+        }
+
+        .u-elev { box-shadow: var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow, 0 0 #0000); }
+        .u-shadow-btn { --tw-shadow: var(--shadow-inset-btn); }
+        .u-shadow-btn-sm { --tw-shadow: var(--shadow-inset-btn-sm); }
+
+        .btn-ballon-base {
+          color: var(--brand-800);
+          border-color: var(--brand-400);
+          background-image: linear-gradient(to bottom, var(--brand-75), var(--brand-200));
+          position: relative;
+          text-align: center;
+          font-weight: 600;
+          border-radius: 9999px;
+          border: 1.5px solid;
+          transition: all 0.2s;
+          cursor: pointer;
+        }
+
+        .btn-ballon-base:hover {
+          background-image: linear-gradient(to bottom, var(--brand-100), var(--brand-300));
+        }
+
+        .btn-ballon-record {
+          width: 5rem;
+          height: 5rem;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin: 0 auto;
+          box-shadow: var(--shadow-inset-btn);
+        }
+
+        .btn-ballon-record.recording {
+          animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        .btn-ballon-record.processing {
+          opacity: 0.75;
+          margin-bottom: 2rem;
+        }
+
+        .btn-ballon-icon {
+          padding: 0.375rem;
+          width: 2rem;
+          height: 2rem;
+          border-radius: 50%;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: var(--shadow-inset-btn-sm);
+        }
+
+        .btn-ballon {
+          display: block;
+          width: 100%;
+          min-width: 12rem;
+          min-height: 3rem;
+          padding: 0.625rem 1.25rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: var(--shadow-inset-btn);
+        }
+
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: .5; }
+        }
+
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+
+        .timer {
+          color: #6b7280;
+          font-size: 0.875rem;
+          font-weight: 400;
+        }
+
+        .timer.hidden {
+          display: none;
+        }
+
+        .status {
+          color: var(--gray-700);
+          font-size: 1rem;
+          font-weight: 400;
+        }
+
+        .controls {
+          display: flex;
+          justify-content: center;
+          gap: 1rem;
+        }
+
+        .instructions {
+          margin-top: 2rem;
+          text-align: center;
+        }
+
+        .instructions p {
+          color: var(--brand-800);
+          font-size: 0.75rem;
+          font-weight: 400;
+          opacity: 0.6;
+        }
+
+        .ai-disclaimer {
+          border-radius: 1.5rem;
+          font-size: 0.875rem;
+          border: 1.5px solid var(--brand-400);
+          margin-top: 1.5rem;
+          transition: background-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .ai-disclaimer[open] {
+          background-color: var(--brand-50);
+          box-shadow: var(--shadow-inset-card);
+          padding: 1.5rem 1.25rem;
+        }
+
+        .ai-disclaimer__summary {
+          cursor: pointer;
+          width: 100%;
+          padding: 0.25rem;
+          font-weight: 500;
+          text-decoration: underline;
+          text-underline-offset: 2px;
+          color: var(--brand-800);
+          text-decoration-color: var(--brand-800);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+          list-style: none;
+        }
+
+        .ai-disclaimer__summary::-webkit-details-marker { display: none; }
+
+        .ai-disclaimer__content {
+          margin-top: 0.5rem;
+          padding: 0.75rem 0 0.5rem;
+          text-align: left;
+          color: var(--brand-800);
+        }
+
+        .ai-disclaimer__content p {
+          margin-bottom: 0.25rem;
+        }
+
+        .hidden {
+          display: none !important;
+        }
+
+        .icon {
+          width: 2rem;
+          height: 2rem;
+          fill: currentColor;
+        }
+
+        .icon-sm {
+          width: 1.5rem;
+          height: 1.5rem;
+        }
+
+        .icon-md {
+          width: 1rem;
+          height: 1rem;
+        }
+
+        @media (min-width: 640px) {
+          .timer { font-size: 0.875rem; }
+          .status { font-size: 1.125rem; }
+        }
+
+        @media (min-width: 768px) {
+          .timer { font-size: 1rem; }
+          .status { font-size: 1.125rem; }
+          .ai-disclaimer { font-size: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Logo Onyria -->
+        <div class="logo-section">
+            <div class="logo-circle">
+                <span>O</span>
+            </div>
+            <h1 class="main-title">Onyria</h1>
+            <p class="subtitle">Raconte ton rêve à voix haute</p>
+        </div>
+
+        <!-- Zone d'enregistrement -->
+        <div class="recording-area">
+            
+            <!-- Bouton principal d'enregistrement -->
+            <div>
+                <button id="recordBtn" class="btn-ballon-record btn-ballon-base u-elev u-shadow-btn">
+                    <!-- Icône micro (état initial) -->
+                    <svg id="micIcon" class="icon" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clip-rule="evenodd"></path>
+                    </svg>
+                    <!-- Icône stop (pendant enregistrement) -->
+                    <svg id="stopIcon" class="icon-sm hidden" viewBox="0 0 24 24">
+                        <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                    </svg>
+                    <!-- Icône loading (pendant traitement) -->
+                    <svg id="loadingIcon" class="icon hidden animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Timer -->
+            <div id="timer" class="timer hidden">
+                Temps : <span id="timerText" style="font-family: monospace;">00:00</span>
+            </div>
+
+            <!-- Messages de statut -->
+            <div id="status" class="status">
+                Appuyez pour commencer
+            </div>
+
+            <!-- Contrôles de lecture -->
+            <div id="controls" class="controls hidden">
+                <button id="playBtn" class="btn-ballon-icon btn-ballon-base u-elev u-shadow-btn-sm">
+                    <svg class="icon-md" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
+                </button>
+                
+                <button id="resetBtn" class="btn-ballon-icon btn-ballon-base u-elev u-shadow-btn-sm">
+                    <svg class="icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="1 4 1 10 7 10"></polyline>
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Bouton de sauvegarde -->
+            <button id="saveBtn" class="btn-ballon btn-ballon-base u-elev u-shadow-btn hidden">
+                Sauvegarder le rêve
+            </button>
+        </div>
+
+        <!-- Instructions -->
+        <div class="instructions">
+            <p>Autorisez l'accès au microphone pour commencer l'enregistrement</p>
+        </div>
+
+        <!-- Avertissement -->
+        <details id="disclaimer" class="ai-disclaimer hidden">
+            <summary class="ai-disclaimer__summary">
+                <span>⚠️</span>
+                <span>Avertissement aux Onyriens</span>
+            </summary>
+            <div class="ai-disclaimer__content">
+                <p>Cet enregistrement vocal sera traité pour analyser votre rêve. Assurez-vous d'être dans un environnement calme et de parler clairement.</p>
+                <p>Pour une meilleure analyse, décrivez les personnages, lieux, actions et émotions de votre rêve.</p>
+            </div>
+        </details>
     </div>
-  </details>
-</div>
 
-<script>
-  // ===== VARIABLES D'ÉTAT =====
-  let mediaRecorder;
-  let audioChunks = [];
-  let isRecording = false;
-  let startTime;
-  let timerInterval;
+    <script>
+        // Variables d'état - même structure que votre code
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        let isPlaying = false;
+        let recordedBlob = null;
+        let startTime;
+        let timerInterval;
+        let currentAudio = null;
 
-  // Suivi du flux SSE (succès/erreur)
-  let hadError = false;      // si une étape modèle échoue
-  let sawComplete = false;   // si on a reçu l'event 'complete'
+        // Références DOM - même style que votre code
+        const recordBtn = document.getElementById("recordBtn");
+        const timer = document.getElementById("timer");
+        const timerText = document.getElementById("timerText");
+        const status = document.getElementById("status");
+        const controls = document.getElementById("controls");
+        const playBtn = document.getElementById("playBtn");
+        const resetBtn = document.getElementById("resetBtn");
+        const saveBtn = document.getElementById("saveBtn");
+        const disclaimer = document.getElementById("disclaimer");
 
-  // ===== RÉFÉRENCES DOM =====
-  // Éléments de contrôle de l'enregistrement
-  const recordBtn = document.getElementById("recordBtn");
-  const timer = document.getElementById("timer");
-  const timerText = document.getElementById("timerText");
-  const status = document.getElementById("status");
+        // Icônes du bouton - même système que votre code
+        const micIcon = document.getElementById("micIcon");
+        const stopIcon = document.getElementById("stopIcon");
+        const loadingIcon = document.getElementById("loadingIcon");
 
-  // Éléments où injecter les résultats de l'analyse
-  const transcriptionText = document.getElementById("transcriptionText");
-  const emotionDominante = document.getElementById("emotionDominante");
-  const dreamType = document.getElementById("dreamType");
-  const interpretation = document.getElementById("interpretation");
-  const imageRevee = document.getElementById("imageRevee");
+        // Initialisation - même pattern que votre code
+        recordBtn.addEventListener("click", toggleRecording);
+        playBtn.addEventListener("click", togglePlayback);
+        resetBtn.addEventListener("click", resetRecording);
+        saveBtn.addEventListener("click", saveRecording);
 
-  // Sections complètes à afficher/masquer progressivement
-  const sectionTranscription = document.getElementById("sectionTranscription");
-  const sectionEmotionDream = document.getElementById("sectionEmotionDream");
-  const sectionInterpretation = document.getElementById("sectionInterpretation");
-  const sectionImage = document.getElementById("sectionImage");
-  const sectionDisclaimer = document.getElementById("sectionDisclaimer");
-
-  // Icônes du bouton pour les différents états
-  const micIcon = document.getElementById("micIcon");
-  const stopIcon = document.getElementById("stopIcon");
-  const loadingIcon = document.getElementById("loadingIcon");
-
-  // ===== INITIALISATION =====
-  recordBtn.addEventListener("click", toggleRecording);
-
-  // ===== GESTION DE L'ENREGISTREMENT =====
-  async function toggleRecording() {
-    if (!isRecording) {
-      await startRecording();
-    } else {
-      stopRecording();
-    }
-  }
-
-  async function startRecording() {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      audioChunks = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        audioChunks.push(event.data);
-      };
-
-      mediaRecorder.onstop = processRecording;
-
-      mediaRecorder.start();
-      isRecording = true;
-
-      recordBtn.classList.add("recording");
-      micIcon.classList.add("hidden");
-      stopIcon.classList.remove("hidden");
-      
-      timer.style.display = "block";
-      startTime = Date.now();
-      timerInterval = setInterval(updateTimer, 1000);
-      
-    } catch (err) {
-      // Erreur micro = hors échec modèle → on peut afficher un message spécifique
-      showStatus("Erreur: Impossible d'accéder au microphone");
-    }
-  }
-
-  function stopRecording() {
-    if (mediaRecorder && isRecording) {
-      mediaRecorder.stop();
-      mediaRecorder.stream.getTracks().forEach(track => track.stop());
-      isRecording = false;
-      clearInterval(timerInterval);
-
-      recordBtn.classList.remove("recording");
-      recordBtn.classList.add("processing");
-      stopIcon.classList.add("hidden");
-      loadingIcon.classList.remove("hidden");
-      
-      timer.style.display = "none";
-    }
-  }
-
-  function updateTimer() {
-    const elapsed = Math.floor((Date.now() - startTime) / 1000);
-    const minutes = Math.floor(elapsed / 60);
-    const seconds = elapsed % 60;
-    timerText.textContent = `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
-  }
-
-  // ===== TRAITEMENT VIA SERVER-SENT EVENTS =====
-  async function processRecording() {
-    try {
-      const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
-      const formData = new FormData();
-      formData.append("audio", audioBlob);
-
-      const response = await fetch("/diary/analyse_from_voice/", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = ''; // Buffer pour accumuler les données
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        buffer += chunk; 
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              handleStreamEvent(data);
-            } catch (e) {
-              console.error('Erreur parsing SSE:', e);
-              console.error('Ligne problématique:', line.substring(0, 100) + '...');
+        // Fonction principale - même logique que votre code
+        async function toggleRecording() {
+            if (!isRecording) {
+                await startRecording();
+            } else {
+                stopRecording();
             }
-          }
         }
-      }
 
-    } catch (error) {
-      console.error('Erreur SSE:', error);
-      handleModelFailure("{{ DREAM_ERROR_MESSAGE|escapejs }}");
-    } finally {
-      // Fin de traitement : arrêter les spinners
-      recordBtn.classList.remove("processing");
-      loadingIcon.classList.add("hidden");
-      micIcon.classList.remove("hidden");
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
 
-      // Si erreur déjà gérée : ne rien faire, on laisse le reload se produire
-      if (hadError) return;
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
 
-      // Succès : masquer le bouton et le titre, afficher une éventuelle navigation
-      recordBtn.style.display = "none";
-      const title = document.querySelector("h1");
-      if (title) title.style.display = "none";
-      
-      const nav = document.getElementById("sectionNavigation");
-      if (nav) nav.style.display = "flex";
-    }
-  }
+                mediaRecorder.onstop = processRecording;
 
-  // ===== GESTION DES ÉVÉNEMENTS SSE =====
-  function handleStreamEvent(data) {
-    switch (data.step) {
-      case 'transcription':
-        transcriptionText.textContent = data.data.transcription;
-        sectionTranscription.style.display = "block";
-        break;
-      
-      case 'emotions':
-        emotionDominante.textContent = data.data.dominant_emotion;
-        dreamType.textContent = data.data.dream_type;
-        sectionEmotionDream.style.display = "flex";
-        break;
-      
-      case 'interpretation':
-        interpretation.innerHTML = "";
-        
-        for (const [key, val] of Object.entries(data.data.interpretation)) {
-          const p = document.createElement("p");
-          p.className = "text-left text-xs sm:text-sm md:text-base font-normal mb-4";
-          const strong = document.createElement("strong");
-          strong.textContent = capitalize(key);
-          p.appendChild(strong);
-          
-          // Extraction robuste du contenu (gestion formats variables)
-          let content;
-          if (typeof val === 'string') {
-            content = val;
-          } else if (val && val.contenu) {
-            content = val.contenu;
-          } else if (val && val.content) {
-            content = val.content;
-          } else {
-            content = String(val);
-          }
-          p.appendChild(document.createTextNode(` : ${content}`));
-          interpretation.appendChild(p);
+                mediaRecorder.start();
+                isRecording = true;
+
+                // États visuels - même système que votre code
+                recordBtn.classList.add("recording");
+                micIcon.classList.add("hidden");
+                stopIcon.classList.remove("hidden");
+                
+                timer.classList.remove("hidden");
+                status.textContent = "Enregistrement en cours...";
+                
+                startTime = Date.now();
+                timerInterval = setInterval(updateTimer, 1000);
+                
+            } catch (err) {
+                showStatus("Erreur: Impossible d'accéder au microphone");
+            }
         }
-        
-        sectionInterpretation.style.display = "block";
-        sectionDisclaimer.classList.remove("hidden");
-        break;
-      
-      case 'image':
-      imageRevee.innerHTML = "";
-      
-      const img = document.createElement("img");
-      
-      if (data.data.image_path) {
-        img.src = data.data.image_path;
-        img.alt = "Image du rêve";
-      } else {
-        img.src = "{% static 'img/placeholder.png' %}";
-        img.alt = "Image non disponible";
-      }
-      
-      img.className = "pastel-image w-full aspect-[4/3] object-cover mx-auto";
-      img.onerror = function() {
-        console.error('Erreur chargement image');
-        this.style.display = 'none';
-      };
-      
-      imageRevee.appendChild(img);
-      sectionImage.style.display = "block";
-      break;
 
-      case 'complete':
-        sawComplete = true; // succès confirmé
-        break;
-      
-      case 'error':
-        // Un seul message générique + masquage total + reload
-        handleModelFailure(data.message || "{{ DREAM_ERROR_MESSAGE|escapejs }}");
-        break;
-    }
-  }
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                isRecording = false;
+                clearInterval(timerInterval);
 
-  // ===== GESTION D'ÉCHEC MODÈLE (unique UI) =====
-  function handleModelFailure(message) {
-    hadError = true;
+                // États visuels - même système que votre code
+                recordBtn.classList.remove("recording");
+                recordBtn.classList.add("processing");
+                stopIcon.classList.add("hidden");
+                loadingIcon.classList.remove("hidden");
+                
+                timer.classList.add("hidden");
+                status.textContent = "Traitement...";
+            }
+        }
 
-    // Afficher uniquement le message générique
-    showStatus(message);
+        function processRecording() {
+            recordedBlob = new Blob(audioChunks, { type: "audio/webm" });
+            
+            // Fin de traitement - même système que votre code
+            recordBtn.classList.remove("processing");
+            loadingIcon.classList.add("hidden");
+            micIcon.classList.remove("hidden");
+            
+            status.textContent = "Enregistrement terminé";
+            controls.classList.remove("hidden");
+            saveBtn.classList.remove("hidden");
+            disclaimer.classList.remove("hidden");
+        }
 
-    // Cacher absolument tout le reste
-    recordBtn.style.display = "none";
-    const title = document.querySelector("h1");
-    if (title) title.style.display = "none";
-    sectionTranscription.style.display = "none";
-    sectionEmotionDream.style.display = "none";
-    sectionInterpretation.style.display = "none";
-    sectionImage.style.display = "none";
-    sectionDisclaimer.classList.add("hidden");
-    const nav = document.getElementById("sectionNavigation");
-    if (nav) nav.style.display = "none";
+        function updateTimer() {
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            timerText.textContent = `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+        }
 
-    // Stop états visuels
-    recordBtn.classList.remove("processing");
-    loadingIcon.classList.add("hidden");
-    micIcon.classList.remove("hidden");
+        function togglePlayback() {
+            if (!isPlaying) {
+                playRecording();
+            } else {
+                pausePlayback();
+            }
+        }
 
-    // Rechargement automatique après quelques secondes
-    setTimeout(() => {
-      window.location.reload();
-    }, 3500);
-  }
+        function playRecording() {
+            if (recordedBlob) {
+                currentAudio = new Audio(URL.createObjectURL(recordedBlob));
+                currentAudio.onended = () => {
+                    isPlaying = false;
+                    playBtn.innerHTML = '<svg class="icon-md" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+                };
+                currentAudio.play();
+                isPlaying = true;
+                playBtn.innerHTML = '<svg class="icon-md" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
+            }
+        }
 
-  // ===== FONCTIONS UTILITAIRES =====
-  function showStatus(message) {
-    status.textContent = message;
-    status.style.display = "block";
-    // On ne cache pas ici si c'est une erreur modèle : la page va recharger
-    setTimeout(() => {
-      if (!hadError) {
-        status.style.display = "none";
-      }
-    }, 5000);
-  }
+        function pausePlayback() {
+            if (currentAudio) {
+                currentAudio.pause();
+                isPlaying = false;
+                playBtn.innerHTML = '<svg class="icon-md" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+            }
+        }
 
-  function capitalize(str) {
-    return str.charAt(0).toUpperCase() + str.slice(1);
-  }
-</script>
+        function resetRecording() {
+            recordedBlob = null;
+            isPlaying = false;
+            
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio = null;
+            }
+            
+            controls.classList.add("hidden");
+            saveBtn.classList.add("hidden");
+            disclaimer.classList.add("hidden");
+            status.textContent = "Appuyez pour commencer";
+            
+            // Reset du bouton de lecture
+            playBtn.innerHTML = '<svg class="icon-md" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+        }
 
-{% endblock %}
+        function saveRecording() {
+            if (recordedBlob) {
+                const url = URL.createObjectURL(recordedBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `reve_${new Date().toISOString().slice(0, 10)}.webm`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+        }
+
+        // Fonction utilitaire - même style que votre code
+        function showStatus(message) {
+            status.textContent = message;
+            setTimeout(() => {
+                if (status.textContent === message) {
+                    status.textContent = "Appuyez pour commencer";
+                }
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
