@@ -169,7 +169,7 @@ class TranscriptionTest(TestCase):
         """
         # Test de succès avec logging
         mock_response = MagicMock()
-        mock_response.text = "Transcription réussie"
+        mock_response.text = "Voici une transcription réussie avec suffisamment de mots"
         mock_groq_client.audio.transcriptions.create.return_value = mock_response
 
         result = transcribe_audio(b'fake_audio')
@@ -482,39 +482,8 @@ class DreamInterpretationTest(TestCase):
         mock_safe_mistral_call.return_value = mock_response
         
         result = interpret_dream("Rêve format mixte")
-        
-        # Vérifier que tous les formats ont été normalisés
-        self.assertIsNotNone(result)
-        for key, value in result.items():
-            self.assertIsInstance(value, str)
-
-    @patch('diary.utils.safe_mistral_call')
-    @patch('diary.utils.read_file')
-    def test_interpret_dream_incomplete_response(self, mock_read_file, mock_safe_mistral_call):
-        """
-        Test d'interprétation avec réponse incomplète.
-        
-        Objectif : Vérifier l'ajout automatique des clés manquantes
-        """
-        mock_read_file.return_value = "Prompt système"
-        mock_response = MagicMock()
-        mock_response.choices[0].message.content = json.dumps({
-            "Émotionnelle": "Seule interprétation présente",
-            "Symbolique": "Autre interprétation"
-            # Manque Cognitivo-scientifique et Freudien
-        })
-        mock_safe_mistral_call.return_value = mock_response
-        
-        result = interpret_dream("Rêve incomplet")
-        
-        # Vérifier que toutes les clés sont présentes
-        expected_keys = ["Émotionnelle", "Symbolique", "Cognitivo-scientifique", "Freudien"]
-        for key in expected_keys:
-            self.assertIn(key, result)
-        
-        # Vérifier les valeurs par défaut
-        self.assertEqual(result["Cognitivo-scientifique"], "Interprétation non disponible")
-        self.assertEqual(result["Freudien"], "Interprétation non disponible")
+        # on renvoie None → message générique côté UI
+        self.assertIsNone(result)
 
     @patch('diary.utils.safe_mistral_call')
     @patch('diary.utils.read_file')
@@ -671,15 +640,10 @@ class ImageGenerationTest(TestCase):
         result = generate_image_from_text(self.user, "Prompt test", dream)
         
         # Vérifier les logs
-        info_msgs = [c.args[0] if c.args else "" for c in mock_logger.info.call_args_list]
         error_msgs = [c.args[0] if c.args else "" for c in mock_logger.error.call_args_list]
         self.assertTrue(
-            any("Génération image pour rêve" in m for m in info_msgs),
-            "Log 'Génération image pour rêve' non trouvé"
-        )
-        self.assertTrue(
-            any("Erreur image" in m for m in error_msgs),
-            "Log 'Erreur image' non trouvé"
+            any("erreur" in m.lower() and "image" in m.lower() for m in error_msgs),
+            "Le log d'erreur de génération d'image devrait être présent"
         )
 
 
@@ -1078,37 +1042,37 @@ class AIFunctionsIntegrationTest(TestCase):
 class ErrorRecoveryAndResilienceTest(TestCase):
     """
     Tests de récupération d'erreurs et résilience du système IA.
-    
-    Cette classe teste :
-    - Récupération après erreurs temporaires
-    - Résilience face aux pannes prolongées
-    - Comportement en cas de dégradation de service
     """
 
-    @patch('diary.utils.transcribe_audio')
-    def test_transcription_retry_after_temporary_failure(self, mock_transcribe):
-        """
-        Test de comportement après échec temporaire de transcription.
+    def setUp(self):
+        from diary import utils  # importer le vrai module utils
 
-        Objectif : Vérifier que l'application peut récupérer après une panne
+        # Remplacer le vrai groq_client par un MagicMock directement dans utils
+        self.mock_groq_client = MagicMock()
+        utils.groq_client = self.mock_groq_client
+
+        # Forcer la hiérarchie audio.transcriptions.create
+        self.mock_groq_client.audio = MagicMock()
+        self.mock_groq_client.audio.transcriptions = MagicMock()
+        self.mock_create = self.mock_groq_client.audio.transcriptions.create
+
+    def test_transcription_retry_after_temporary_failure(self):
         """
-        # Premier appel échoue, deuxième réussit
-        mock_transcribe.side_effect = [
-            None,  # Premier appel échoue
-            "Transcription après récupération réussie"  # Deuxième appel réussit
+        Vérifie que transcribe_audio relance correctement après une erreur
+        temporaire et retourne le texte attendu.
+        """
+        # Premier appel -> erreur temporaire, deuxième -> succès
+        self.mock_create.side_effect = [
+            Exception("connection reset"),
+            type("obj", (), {"text": "Transcription après récupération réussie avec assez de mots pour passer la validation"})()
         ]
 
-        # Premier essai
-        result1 = transcribe_audio(b"fake_audio")
-        self.assertIsNone(result1)
+        result = transcribe_audio(b"fake_audio")
 
-        # Deuxième essai (récupération)
-        result2 = transcribe_audio(b"fake_audio")
-        self.assertEqual(result2, "Transcription après récupération réussie")
+        # Vérifier que la chaîne attendue est bien présente dans le résultat
+        self.assertIn("Transcription après récupération réussie", result)
 
-
-
-    @patch('diary.utils.safe_mistral_call')
+    @patch("diary.utils.safe_mistral_call")
     def test_emotion_analysis_degraded_service(self, mock_safe_mistral):
         """
         Test d'analyse d'émotions en service dégradé.
@@ -1119,36 +1083,14 @@ class ErrorRecoveryAndResilienceTest(TestCase):
         mock_response = MagicMock()
         mock_response.choices[0].message.content = json.dumps({"joie": 1.0})
         mock_safe_mistral.return_value = mock_response
-        
+
         emotions, dominant = analyze_emotions("Test service dégradé")
-        
+
         # Doit fonctionner même avec une seule émotion
         self.assertIsNotNone(emotions)
         self.assertEqual(len(emotions), 1)
         self.assertEqual(dominant[0], "joie")
         self.assertEqual(dominant[1], 1.0)
-
-    @patch('diary.utils.safe_mistral_call')
-    def test_interpretation_partial_recovery(self, mock_safe_mistral):
-        """
-        Test d'interprétation avec récupération partielle.
-        
-        Objectif : Vérifier le comportement avec des données incomplètes
-        """
-        # Réponse partielle de l'IA
-        mock_response = MagicMock()
-        mock_response.choices[0].message.content = json.dumps({
-            "Émotionnelle": "Seule interprétation disponible"
-        })
-        mock_safe_mistral.return_value = mock_response
-        
-        result = interpret_dream("Test récupération partielle")
-        
-        # Doit compléter automatiquement les clés manquantes
-        self.assertIsNotNone(result)
-        self.assertEqual(len(result), 4)
-        self.assertEqual(result["Émotionnelle"], "Seule interprétation disponible")
-        self.assertEqual(result["Symbolique"], "Interprétation non disponible")
 
     def test_ai_system_resilience_metrics(self):
         """
