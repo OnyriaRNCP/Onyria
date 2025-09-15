@@ -59,9 +59,9 @@ AI_CONFIG = {
     'INTERPRETATION_MODEL': 'mistral-large-latest',
     'THEMES_MODEL': 'mistral-large-latest',
     
-    # Paramètres de retry
-    'TRANSCRIBE_MAX_RETRIES': 3,
-    'TRANSCRIBE_BACKOFF_BASE': 1.5,
+    # Paramètres de retry globaux
+    'MAX_RETRIES': 3,
+    'BACKOFF_BASE': 1.5,
     
     # Timeouts et limites
     'DEFAULT_TEMPERATURE': 0.0,
@@ -79,11 +79,19 @@ AI_CONFIG = {
         "quota": ["insufficient_quota", "quota_exceeded", "quota"],
         "rate_limit": ["rate_limit", "too many requests", "429"],
         "timeout": ["timeout", "request timeout"],
+        "generate_failed": ["failed to generate response", "code 3000", "invalid_request_error"],
+        "auth": ["invalid_api_key", "unauthorized", "forbidden", "authentication failed"],
+        "bad_request": ["bad request", "invalid", "malformed", "422"],
+        "server_error": ["internal server error", "server_error", "502", "503", "504"],
+        "connection": ["connection error", "network error", "dns", "ssl", "connection reset"],
+        "not_found": ["not found", "404"],
     },
 
+    # CODES ERREUR pour l'analyse Mistral
+    'ANALYZE_ERROR_STATUS': [408, 429, 500, 502, 503, 504],
+
     # RÈGLES DE FALLBACK pour l'analyse Mistral
-    'FALLBACK_STATUS': [408, 429, 500, 502, 503, 504],
-    'FALLBACK_KEYWORDS': [
+    'ANALYZE_FALLBACK_KEYWORDS': [
         "too many requests",
         "rate_limit",
         "service_unavailable",
@@ -97,6 +105,20 @@ AI_CONFIG = {
     ],
     'FALLBACK_BASE_DELAY_S': 0.5,   # backoff avant modèle suivant
     'FALLBACK_MAX_DELAY_S': 3.0,
+
+ # RÈGLES DE RETRY pour l'analyse Mistral
+    'ANALYZE_RETRY_KEYWORDS': [
+        "too many requests",      
+        "rate_limit",             
+        "temporarily unavailable",
+        "timeout",
+        "service unavailable",
+        "capacity",
+        "service tier capacity",
+        "failed to generate response",   
+        "code 3000",                     
+        "invalid_request_error",         
+    ],
 
     # RÈGLES DE RETRY pour la transcription Groq
     'TRANSCRIBE_RETRYABLE_KEYWORDS': [
