@@ -1042,16 +1042,24 @@ class AIFunctionsIntegrationTest(TestCase):
 class ErrorRecoveryAndResilienceTest(TestCase):
     """
     Tests de récupération d'erreurs et résilience du système IA.
+
+    Cette classe couvre :
+    - La logique de retry côté transcription (Groq)
+    - L'utilisation du fallback HTTPX si Groq échoue
+    - La résilience via des métriques simples de disponibilité
+    - Les cas de service dégradé côté Mistral (émotions limitées)
     """
 
     def setUp(self):
         from diary import utils  # importer le vrai module utils
 
         # Remplacer le vrai groq_client par un MagicMock directement dans utils
+        # → on contrôle totalement les appels faits à l'API Groq
         self.mock_groq_client = MagicMock()
         utils.groq_client = self.mock_groq_client
 
         # Forcer la hiérarchie audio.transcriptions.create
+        # → c'est l'appel bas niveau utilisé par transcribe_audio()
         self.mock_groq_client.audio = MagicMock()
         self.mock_groq_client.audio.transcriptions = MagicMock()
         self.mock_create = self.mock_groq_client.audio.transcriptions.create
@@ -1061,32 +1069,73 @@ class ErrorRecoveryAndResilienceTest(TestCase):
         Vérifie que transcribe_audio relance correctement après une erreur
         temporaire et retourne le texte attendu.
         """
-        # Premier appel -> erreur temporaire, deuxième -> succès
+        # Premier appel -> erreur temporaire (simule un problème réseau),
+        # Deuxième appel -> succès avec un texte valide
         self.mock_create.side_effect = [
             Exception("connection reset"),
-            type("obj", (), {"text": "Transcription après récupération réussie avec assez de mots pour passer la validation"})()
+            type(
+                "obj", (),
+                {"text": "Transcription après récupération réussie avec assez de mots pour passer la validation"}
+            )()
         ]
 
         result = transcribe_audio(b"fake_audio")
 
-        # Vérifier que la chaîne attendue est bien présente dans le résultat
+        # Vérifier que le texte attendu est bien retourné après retry
         self.assertIn("Transcription après récupération réussie", result)
+
+    @patch("diary.utils._transcribe_via_httpx")
+    def test_transcription_fallback_httpx(self, mock_httpx):
+        """
+        Vérifie que transcribe_audio utilise bien le fallback HTTPX
+        après plusieurs échecs Groq (et que le résultat est bien celui du fallback).
+        """
+        # Tous les appels Groq échouent
+        self.mock_create.side_effect = Exception("connection reset")
+
+        # Le fallback HTTPX réussit et retourne un texte
+        mock_httpx.return_value = "Texte via fallback HTTPX valide"
+
+        result = transcribe_audio(b"fake_audio")
+
+        # Vérifie que le fallback a été utilisé correctement
+        self.assertEqual(result, "Texte via fallback HTTPX valide")
+        self.assertGreaterEqual(self.mock_create.call_count, 2)
+        mock_httpx.assert_called_once()
+
+    @patch("diary.utils._transcribe_via_httpx")
+    def test_transcription_fallback_httpx_failure(self, mock_httpx):
+        """
+        Vérifie que si le fallback HTTPX échoue lui aussi,
+        transcribe_audio retourne None (dégradation contrôlée).
+        """
+        # Tous les appels Groq échouent
+        self.mock_create.side_effect = Exception("connection reset")
+
+        # Le fallback HTTPX échoue également
+        mock_httpx.return_value = None
+
+        result = transcribe_audio(b"fake_audio")
+
+        # Aucun résultat n'est retourné dans ce cas
+        self.assertIsNone(result)
+        self.assertGreaterEqual(self.mock_create.call_count, 2)
+        mock_httpx.assert_called_once()
 
     @patch("diary.utils.safe_mistral_call")
     def test_emotion_analysis_degraded_service(self, mock_safe_mistral):
         """
-        Test d'analyse d'émotions en service dégradé.
-        
-        Objectif : Vérifier le comportement avec des réponses partielles
+        Vérifie que l'analyse d'émotions fonctionne même
+        en "mode dégradé" avec très peu d'émotions retournées.
         """
-        # Simuler un service dégradé qui ne retourne qu'une émotion
+        # Mock : l'IA retourne uniquement "joie" avec proba 1.0
         mock_response = MagicMock()
         mock_response.choices[0].message.content = json.dumps({"joie": 1.0})
         mock_safe_mistral.return_value = mock_response
 
         emotions, dominant = analyze_emotions("Test service dégradé")
 
-        # Doit fonctionner même avec une seule émotion
+        # Résultat valide mais limité
         self.assertIsNotNone(emotions)
         self.assertEqual(len(emotions), 1)
         self.assertEqual(dominant[0], "joie")
@@ -1094,31 +1143,158 @@ class ErrorRecoveryAndResilienceTest(TestCase):
 
     def test_ai_system_resilience_metrics(self):
         """
-        Test des métriques de résilience du système IA.
-        
-        Objectif : Vérifier que le système peut mesurer sa propre santé
+        Vérifie la logique de calcul de disponibilité
+        (succès vs échecs simulés sur un échantillon).
         """
-        # Ce test vérifie que nous pouvons détecter la santé des services IA
         failure_count = 0
         success_count = 0
-        
-        # Simuler plusieurs appels avec succès/échecs
         test_results = [True, False, True, True, False, True]
-        
+
+        # Compter les succès et échecs
         for success in test_results:
             if success:
                 success_count += 1
             else:
                 failure_count += 1
-        
-        # Calculer la disponibilité
+
         availability = success_count / len(test_results) * 100
-        
-        # Le système doit pouvoir calculer ses métriques
-        self.assertAlmostEqual(availability, 66.67, places=2)  # 4/6 = 66.67%
+
+        # Vérifier les métriques
+        self.assertAlmostEqual(availability, 66.67, places=2)
         self.assertEqual(success_count, 4)
         self.assertEqual(failure_count, 2)
 
+
+class SafeMistralCallTest(TestCase):
+    """
+    Tests du système de fallback safe_mistral_call.
+
+    Cette classe couvre :
+    - Les chaînes de fallback (succès et échec complet)
+    - Les erreurs critiques (pas de fallback)
+    """
+
+    @patch('diary.utils.mistral_client')
+    def test_fallback_chain_mistral_large_latest(self, mock_mistral_client):
+        """
+        Vérifie que safe_mistral_call bascule bien vers mistral-medium
+        quand mistral-large-latest échoue.
+        """
+        mock_response = MagicMock()
+        # Premier appel échoue, deuxième réussit
+        mock_mistral_client.chat.complete.side_effect = [
+            Exception("quota_exceeded"),
+            mock_response
+        ]
+
+        messages = [{"role": "user", "content": "test"}]
+        result = safe_mistral_call("mistral-large-latest", messages, "Test fallback")
+
+        # Vérifier que le fallback a bien marché
+        self.assertEqual(result, mock_response)
+        self.assertEqual(mock_mistral_client.chat.complete.call_count, 2)
+
+        # Vérifier que les modèles ont été appelés dans le bon ordre
+        calls = mock_mistral_client.chat.complete.call_args_list
+        expected_models = ["mistral-large-latest", "mistral-medium"]
+
+        for i, expected_model in enumerate(expected_models):
+            call_kwargs = calls[i][1]
+            self.assertEqual(call_kwargs['model'], expected_model)
+
+    @patch('diary.utils.mistral_client')
+    def test_fallback_complete_failure(self, mock_mistral_client):
+        """
+        Vérifie le comportement quand tous les modèles échouent.
+        → safe_mistral_call doit retourner None.
+        """
+        mock_mistral_client.chat.complete.side_effect = Exception("quota_exceeded")
+
+        messages = [{"role": "user", "content": "test"}]
+        result = safe_mistral_call("mistral-large-latest", messages, "Test échec complet")
+
+        self.assertIsNone(result)
+        self.assertEqual(mock_mistral_client.chat.complete.call_count, 4)
+
+    @patch("diary.utils.mistral_client")
+    def test_fallback_critical_error_no_retry(self, mock_mistral_client):
+        """
+        Vérifie qu'une erreur critique (ex: invalid_api_key)
+        stoppe immédiatement le processus sans tenter de fallback.
+        """
+        mock_mistral_client.chat.complete.side_effect = Exception("invalid_api_key")
+
+        messages = [{"role": "user", "content": "test"}]
+
+        with self.assertRaises(Exception):
+            safe_mistral_call("mistral-large-latest", messages, "Test erreur critique")
+
+        # Un seul appel doit avoir été effectué → pas de fallback
+        self.assertEqual(mock_mistral_client.chat.complete.call_count, 1)
+
+
+class ImageGenerationTest(TestCase):
+    """
+    Tests de la génération d'images via Mistral AI.
+
+    Cette classe couvre :
+    - Le retry après erreur (timeout → retry réussi)
+    """
+
+    def setUp(self):
+        # Création d'un utilisateur de test
+        self.user = User.objects.create_user(
+            email='test_images@example.com',
+            username='test_images',
+            password=TEST_USER_PASSWORD,
+        )
+
+    @patch('diary.utils.mistral_client')
+    @patch('diary.utils.read_file')
+    def test_generate_image_retry_after_error(self, mock_read_file, mock_mistral_client):
+        """
+        Vérifie que generate_image_from_text relance correctement
+        après une erreur (timeout) et réussit ensuite.
+        """
+        mock_read_file.return_value = "Instructions..."
+        dream = Dream.objects.create(
+            user=self.user,
+            transcription="Rêve avec retry"
+        )
+
+        # Premier appel -> Exception (timeout),
+        # Deuxième appel -> succès avec un agent valide
+        mock_mistral_client.beta.agents.create.side_effect = [
+            Exception("timeout"),  # reconnu comme retryable
+            MagicMock(id="agent_123")
+        ]
+
+        # Mock d'une conversation contenant un file_id
+        mock_conversation = MagicMock()
+        mock_output = MagicMock()
+        mock_output.content = [MagicMock(file_id="file_456")]
+        mock_conversation.outputs = [mock_output]
+        mock_mistral_client.beta.conversations.start.return_value = mock_conversation
+
+        # Mock du téléchargement d'image
+        fake_image_data = b"fake_image_binary_data"
+        mock_download = MagicMock()
+        mock_download.read.return_value = fake_image_data
+        mock_mistral_client.files.download.return_value = mock_download
+
+        # Exécution de la génération
+        result = generate_image_from_text(
+            self.user,
+            "Un oiseau bleu",
+            dream
+        )
+
+        # Vérifications : succès + image bien sauvegardée
+        self.assertTrue(result)
+        dream.refresh_from_db()
+        self.assertTrue(dream.has_image)
+        # Vérifier qu'au moins 2 appels ont été faits (retry)
+        self.assertGreaterEqual(mock_mistral_client.beta.agents.create.call_count, 2)
 
 class AIResponseValidationTest(TestCase):
     """
