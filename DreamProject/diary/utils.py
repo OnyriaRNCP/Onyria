@@ -18,6 +18,7 @@ from django.conf import settings
 from dotenv import load_dotenv
 from groq import Groq
 from mistralai import Mistral
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from .metrics.runtime import metric_ok, metric_fail, metric_fallback, metric_retry
 from collections import Counter, defaultdict
 from .models import Dream
@@ -192,16 +193,20 @@ def validate_and_fix_interpretation(interpretation_data):
                 fixed_interpretation[key] = value
 
             else:
-                # Coercition robuste en chaîne
-                fixed_interpretation[key] = _to_str(value)
-                logger.warning(
-                    f"Conversion forcée en string pour {key}: {type(value)}"
-                )
+                # Rejet immédiat si type invalide
+                logger.warning(f"Type invalide pour {key}: {type(value)} - interprétation rejetée")
+                return None
 
         else:
-            # Clé manquante, ajouter un placeholder explicite
-            fixed_interpretation[key] = "Interprétation non disponible"
-            logger.warning(f"Clé manquante: {key}")
+            # Rejet immédiat si clé manquante
+            logger.warning(f"Clé manquante: {key} - interprétation rejetée")
+            return None
+
+    # Vérifier que toutes les valeurs sont des strings non vides
+    for key, value in fixed_interpretation.items():
+        if not isinstance(value, str) or not value.strip():
+            logger.warning(f"Valeur vide ou invalide pour {key} - interprétation rejetée")
+            return None
 
     logger.debug("Validation interprétation terminée avec succès")
     return fixed_interpretation
@@ -346,10 +351,10 @@ def transcribe_audio(audio_data, language="fr"):
             temp_file_path = temp_file.name
 
         # Système de retry avec backoff exponentiel et configuration centralisée
-        for attempt in range(1, AI_CONFIG['TRANSCRIBE_MAX_RETRIES'] + 1):
+        for attempt in range(1, AI_CONFIG['MAX_RETRIES'] + 1):
             try:
                 logger.info(
-                    f"Transcription tentative {attempt}/{AI_CONFIG['TRANSCRIBE_MAX_RETRIES']}"
+                    f"Transcription tentative {attempt}/{AI_CONFIG['MAX_RETRIES']}"
                 )
 
                 with open(temp_file_path, "rb") as audio_file:
@@ -364,7 +369,6 @@ def transcribe_audio(audio_data, language="fr"):
                     )
 
                 duration = time.time() - start_time
-
                 
                 metric_retry("groq", "transcribe", total_retry_count, total_backoff_ms)
 
@@ -402,10 +406,10 @@ def transcribe_audio(audio_data, language="fr"):
                 last_error = e
                 if (
                     _is_retryable_transcription_error(e)
-                    and attempt < AI_CONFIG['TRANSCRIBE_MAX_RETRIES']
+                    and attempt < AI_CONFIG['MAX_RETRIES']
                 ):
                     sleep_s = round(
-                        AI_CONFIG['TRANSCRIBE_BACKOFF_BASE'] ** attempt, 2
+                        AI_CONFIG['BACKOFF_BASE'] ** attempt, 2
                     )
                     sleep_ms = int(sleep_s * 1000)
 
@@ -478,8 +482,8 @@ def transcribe_audio(audio_data, language="fr"):
 
 # Concrétisation paramétrable depuis settings.AI_CONFIG 
 try:
-    FALLBACK_STATUS = set(AI_CONFIG['FALLBACK_STATUS'])
-    FALLBACK_KEYWORDS = tuple(AI_CONFIG['FALLBACK_KEYWORDS'])
+    FALLBACK_STATUS = set(AI_CONFIG['ANALYZE_ERROR_STATUS'])
+    FALLBACK_KEYWORDS = tuple(AI_CONFIG['ANALYZE_FALLBACK_KEYWORDS'])
 except KeyError as e:
     logger.error(f"AI_CONFIG manquant: {e}. Règles de fallback vides par sécurité.")
     FALLBACK_STATUS = set()
@@ -570,8 +574,8 @@ def safe_mistral_call(model, messages, operation="API call"):
 
             # On peut tester le modèle suivant
             can_fallback = (
-                (status_code in AI_CONFIG['FALLBACK_STATUS']) or
-                any(k in merged_msg for k in AI_CONFIG['FALLBACK_KEYWORDS'])
+                (status_code in AI_CONFIG['ANALYZE_ERROR_STATUS']) or
+                any(k in merged_msg for k in AI_CONFIG['ANALYZE_FALLBACK_KEYWORDS'])
             )
 
             if can_fallback:
@@ -584,6 +588,7 @@ def safe_mistral_call(model, messages, operation="API call"):
                 log_messages = {
                     "quota": f"[{operation}] QUOTA ATTEINT - {current_model}",
                     "rate_limit": f"[{operation}] RATE LIMIT - {current_model}",
+                    "unknown": f"[{operation}] ERREUR INCONNUE - {current_model}",
                 }
 
                 logger.warning(log_messages.get(reason, f"[{operation}] Erreur {current_model}: {e}"))
@@ -759,25 +764,43 @@ def generate_image_from_text(user, prompt_text, dream_instance):
         metric_fail("mistral", "image", 0, reason="no_api_key")
         return False
 
+    operation = "image"
+    current_model = AI_CONFIG['IMAGE_GENERATION_MODEL']
+
     logger.info(f"Génération image pour rêve {dream_instance.id}")
     start_time = time.time()
 
-    try:
-        system_instructions = read_file("instructions_image.txt")
+    system_instructions = read_file("instructions_image.txt")
+    max_retries = AI_CONFIG["MAX_RETRIES"]
+    backoff_base = AI_CONFIG["BACKOFF_BASE"]
+    timeout_s = AI_CONFIG["API_TIMEOUT"]
 
+    total_retry_count = 0
+    total_backoff_ms = 0
+
+    # baseline: retry=0 (comme transcription)
+    metric_retry("mistral", operation, total_retry_count, total_backoff_ms)
+
+    for attempt in range(1, max_retries + 1):
         try:
             agent = mistral_client.beta.agents.create(
-                model=AI_CONFIG['IMAGE_GENERATION_MODEL'],
+                model=current_model,
                 name="Dream Image Agent",
                 instructions=system_instructions,
                 tools=[{"type": "image_generation"}],
                 completion_args={"temperature": 0.3, "top_p": 0.95},
             )
 
-            conversation = mistral_client.beta.conversations.start(
-                agent_id=agent.id, inputs=prompt_text
-            )
+            # Timeout appliqué
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    mistral_client.beta.conversations.start,
+                    agent_id=agent.id,
+                    inputs=prompt_text,
+                )
+                conversation = future.result(timeout=timeout_s)
 
+            # Extraction du fichier généré
             file_id = next(
                 (
                     item.file_id
@@ -790,40 +813,68 @@ def generate_image_from_text(user, prompt_text, dream_instance):
             )
 
             if not file_id:
-                metric_fail("mistral", "image", int((time.time() - start_time) * 1000), reason="no_file")
-                logger.warning("Aucune image générée par l'agent")
+                reason = "no_file"
+                duration = time.time() - start_time
+                logger.warning(f"[{operation.upper()}] AUCUN FICHIER RETOURNÉ - {current_model} "
+                               f"(tentative {attempt}/{max_retries})")
+                metric_fail("mistral", operation, int(duration * 1000), reason=reason)
                 return False
 
+            # Télécharger le fichier image
             image_bytes = mistral_client.files.download(file_id=file_id).read()
 
-            # Stocker en base64 au lieu de fichier
             dream_instance.set_image_from_bytes(image_bytes, format="PNG")
             dream_instance.save()
 
             duration = time.time() - start_time
-            logger.info(f"Image générée avec succès en {duration:.2f}s")
-            metric_ok("mistral", "image", int(duration * 1000))
+            logger.info(f"Image générée avec succès en {duration:.2f}s (tentative {attempt})")
+
+            metric_ok("mistral", operation, int(duration * 1000))
             return True
 
+        except TimeoutError:
+            duration = time.time() - start_time
+            logger.warning(f"[{operation.upper()}] TIMEOUT après {timeout_s}s (tentative {attempt}/{max_retries})")
+            if attempt == max_retries:
+                logger.error(f"[{operation.upper()}] Échec définitif après {max_retries} tentatives (timeout)")
+                metric_fail("mistral", operation, int(duration * 1000), reason="timeout")
+                return False
+
         except Exception as e:
+            duration = time.time() - start_time
             error_msg = str(e).lower()
 
-            # Valeur par défaut
-            reason = "unknown"
+            # extraire status + body
+            status_code, body_text = _extract_status_and_text(e)
+            merged_msg = (error_msg + " " + body_text.lower()).strip()
 
-            # Mapping cohérent avec safe_mistral_call
-            reason = _map_reason_from_msg(error_msg, None)
+            # mapper la raison centralisée
+            reason = _map_reason_from_msg(merged_msg, status_code)
 
-            duration = time.time() - start_time
-            logger.error(f"Erreur image ({reason}) après {duration:.2f}s: {e}")
-            metric_fail("mistral", "image", int(duration * 1000), reason=reason)
-            return False
+            # décider si retryable
+            is_retryable = (
+                (status_code in AI_CONFIG['ANALYZE_ERROR_STATUS']) or
+                any(k in merged_msg for k in AI_CONFIG['ANALYZE_RETRY_KEYWORDS'])
+            )
 
-    except Exception as e:
-        duration = time.time() - start_time
-        logger.error(f"Erreur génération image après {duration:.2f}s: {e}")
-        metric_fail("mistral", "image", int(duration * 1000), reason="exception")
-        return False
+            if is_retryable and attempt < max_retries:
+                sleep_s = min(backoff_base ** attempt, AI_CONFIG.get("BACKOFF_MAX_DELAY_S", 5))
+                sleep_ms = int(sleep_s * 1000)
+
+                total_retry_count += 1
+                total_backoff_ms += sleep_ms
+                metric_retry("mistral", operation, total_retry_count, total_backoff_ms)
+
+                logger.warning(f"[{operation.upper()}] Erreur {reason} - retry dans {sleep_s:.2f}s "
+                               f"(tentative {attempt}/{max_retries}): {e}")
+                time.sleep(sleep_s)
+                continue
+            else:
+                logger.error(f"[{operation.upper()}] Erreur définitive {reason} sur {current_model}: {e}")
+                metric_fail("mistral", operation, int(duration * 1000), reason=reason)
+                return False
+
+    return False
 
 # ---------- THEMATIQUE ----------
 
@@ -1584,36 +1635,21 @@ def format_interpretation(raw):
     """
     Normalise l'interprétation d'un rêve pour garantir un format stable.
     - raw peut être une string JSON ou déjà un dict
-    - Retourne toujours un dict avec les 4 clés attendues
+    - Retourne None si l'interprétation est invalide pour déclencher le message générique
     """
     if not raw:
-        return {
-            "Émotionnelle": "Interprétation non disponible",
-            "Symbolique": "Interprétation non disponible",
-            "Cognitivo-scientifique": "Interprétation non disponible",
-            "Freudien": "Interprétation non disponible",
-        }
+        return None
 
-    # Si c’est une string JSON → parser
+    # Si c'est une string JSON → parser
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
         except json.JSONDecodeError:
-            return {
-                "Émotionnelle": "Format invalide",
-                "Symbolique": "Format invalide",
-                "Cognitivo-scientifique": "Format invalide",
-                "Freudien": "Format invalide",
-            }
+            return None
 
-    # Si ce n’est pas un dict → fallback
+    # Si ce n'est pas un dict → rejet
     if not isinstance(raw, dict):
-        return {
-            "Émotionnelle": str(raw),
-            "Symbolique": str(raw),
-            "Cognitivo-scientifique": str(raw),
-            "Freudien": str(raw),
-        }
+        return None
 
     # Normalisation via validate_and_fix_interpretation()
     return validate_and_fix_interpretation(raw)
