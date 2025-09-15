@@ -75,12 +75,16 @@ AI_CONFIG = {
         'open-mistral-7b': [],
     },
 
-    # Raison fréquentes - statut erreur
     'ERROR_REASON_KEYWORDS': {
         "quota": ["insufficient_quota", "quota_exceeded", "quota"],
         "rate_limit": ["rate_limit", "too many requests", "429"],
         "timeout": ["timeout", "request timeout"],
         "generate_failed": ["failed to generate response", "code 3000", "invalid_request_error"],
+        "auth": ["invalid_api_key", "unauthorized", "forbidden", "authentication failed"],
+        "bad_request": ["bad request", "invalid", "malformed", "422"],
+        "server_error": ["internal server error", "server_error", "502", "503", "504"],
+        "connection": ["connection error", "network error", "dns", "ssl", "connection reset"],
+        "not_found": ["not found", "404"],
     },
 
     # CODES ERREUR pour l'analyse Mistral
