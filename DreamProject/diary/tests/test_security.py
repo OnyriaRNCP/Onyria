@@ -207,15 +207,25 @@ class SecurityTests(TestCase):
 
         print(" Champ interprétation protégé contre XSS")
         
+    @patch('diary.utils.get_themes_stats_filtered')
     def test_theme_analysis_xss_protection(self, mock_themes):
         """
         Test protection contre XSS dans l'analyse thématique.
         """
         # Mock pour éviter l'appel API et contrôler le retour
-        mock_themes.return_value = [
-            ("Vol dans le ciel", 5),  # Thème nettoyé sans balises HTML
-            ("Rêves d'évasion", 2)
-        ]
+        mock_themes.return_value = {
+            'themes': {
+                'Vol dans le ciel': {'count': 5, 'percentage': 50.0}
+            },
+            'total_dreams': 10,
+            'top_theme': {
+                'name': 'Vol dans le ciel',
+                'count': 5,
+                'percentage': 50.0
+            },
+            'has_data': True,
+            'message': 'Thèmes trouvés'
+        }
         
         # Créer des rêves avec contenu potentiellement malveillant
         malicious_dreams = [
@@ -252,15 +262,25 @@ class SecurityTests(TestCase):
         for tag in dangerous_tags:
             self.assertNotIn(tag, theme.lower())
 
+    @patch('diary.utils.get_themes_stats_filtered')
     def test_theme_analysis_sql_injection_protection(self, mock_themes):
         """
         Test protection contre injection SQL via contenu des rêves.
         """
         # Mock pour éviter l'appel API et retourner un résultat sûr
-        mock_themes.return_value = [
-            ("Rêves étranges", 4),
-            ("Situations oniriques", 2)
-        ]
+        mock_themes.return_value = {
+            'themes': {
+                'Rêves étranges': {'count': 4, 'percentage': 40.0}
+            },
+            'total_dreams': 10,
+            'top_theme': {
+                'name': 'Rêves étranges',
+                'count': 4,
+                'percentage': 40.0
+            },
+            'has_data': True,
+            'message': 'Thèmes trouvés'
+        }
         
         sql_injections = [
             "'; DROP TABLE diary_dream; --",
