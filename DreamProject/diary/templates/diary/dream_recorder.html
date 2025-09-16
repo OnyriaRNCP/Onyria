@@ -339,7 +339,7 @@
     // Afficher le message spécifique avec style différent
     status.innerHTML = `
       <div style="background-color: #fef3c7; border: 1px solid #d97706; color: #92400e; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
-        <p style="margin: 0; font-weight: 600;">📝 ${message}</p>
+        <p style="margin: 0; font-weight: 600;">${message}</p>
         <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem; opacity: 0.8;">
           Conseil : Décrivez les personnages, lieux, actions et émotions de votre rêve.
         </p>
@@ -351,7 +351,6 @@
     recordBtn.classList.remove("processing");
     loadingIcon.classList.add("hidden");
     micIcon.classList.remove("hidden");
-    recordBtn.style.display = "block";
 
     // Cacher le titre temporairement puis le remettre
     const title = document.querySelector("h1");
