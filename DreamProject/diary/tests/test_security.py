@@ -224,6 +224,7 @@ class SecurityTests(TestCase):
                 'percentage': 50.0
             },
             'has_data': True,
+            'method': 'Catégories',
             'message': 'Thèmes trouvés'
         }
         
@@ -279,6 +280,7 @@ class SecurityTests(TestCase):
                 'percentage': 40.0
             },
             'has_data': True,
+            'method': 'BERTopic',
             'message': 'Thèmes trouvés'
         }
         
