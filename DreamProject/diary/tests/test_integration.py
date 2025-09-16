@@ -173,7 +173,6 @@ class CompleteUserJourneyTest(TestCase):
         mock_interpret.assert_called_once()
         mock_generate.assert_called_once()
 
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_user_journey_with_multiple_dreams(self, mock_themes):
         """
         Test du parcours utilisateur avec plusieurs rêves.
@@ -368,7 +367,6 @@ class MultiUserIsolationTest(TestCase):
         )
 
     
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_statistics_isolation_between_users(self, mock_themes):
         """
         Test d'isolation des statistiques entre utilisateurs.
@@ -558,7 +556,6 @@ class DataConsistencyTest(TestCase):
             context_dream.dominant_emotion, "en_colere"
         )  # Valeur brute en DB
 
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_stats_consistency_with_database(self, mock_themes):
         """
         Test de cohÉrence des statistiques avec la base de donnÉes.
@@ -626,7 +623,6 @@ class DataConsistencyTest(TestCase):
             stats['emotion_dominante_percentage'], 60
         )  # 3/5 * 100
 
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_label_formatting_consistency(self, mock_themes):
         """
         Test de cohÉrence du formatage des labels.
@@ -687,7 +683,6 @@ class DataConsistencyTest(TestCase):
         self.assertEqual(stats.get('emotion_dominante'), 'Colère')  # Formaté
         # Le statut est calculé, donc peut être différent
 
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_theme_analysis_profile_integration(self, mock_themes):
         """
         Test d'intÉgration : thèmes dans le profil onirique.
@@ -872,7 +867,6 @@ class WorkflowRobustnessTest(TestCase):
         response = self.client.get(reverse('analyse_from_voice'))
         self.assertEqual(response.status_code, 405)
         
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_theme_fallback_robustness(self, mock_themes):
         """
         Test de robustesse : fallback quand mistral indisponible.

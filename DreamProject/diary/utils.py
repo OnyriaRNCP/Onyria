@@ -1303,9 +1303,7 @@ def get_themes_timeline_filtered(user, period=None, start_date=None, end_date=No
     return timeline_data, themes_to_track
 
 def analyze_recurring_themes(user, min_dreams=2, min_occurrence=2):
-    """
-    MISE À JOUR : Utilise maintenant get_themes_stats_filtered pour éviter la duplication
-    """
+    
     logger.info(f"Analyse thématiques récurrentes user {user.id}")
     
     # Utiliser la fonction harmonisée qui contient déjà toute la logique

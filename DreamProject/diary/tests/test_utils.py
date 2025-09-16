@@ -389,7 +389,6 @@ class StatisticsAndProfilingTest(TestCase):
             password=TEST_USER_PASSWORD,
         )
         
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_get_profil_onirique_stats_no_dreams(self, mock_themes):
         """
         Test des statistiques avec aucun rêve.
@@ -406,7 +405,6 @@ class StatisticsAndProfilingTest(TestCase):
         self.assertEqual(stats['emotion_dominante'], "émotion endormie")
         self.assertEqual(stats['emotion_dominante_percentage'], 0)
         
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_get_profil_onirique_stats_single_dream(self, mock_themes):
         """
         Test des statistiques avec un seul rêve.
@@ -431,7 +429,6 @@ class StatisticsAndProfilingTest(TestCase):
         self.assertEqual(stats['emotion_dominante'], 'joie')
         self.assertEqual(stats['emotion_dominante_percentage'], 100)
         
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_get_profil_onirique_stats_multiple_dreams_positive(self, mock_themes):
         """
         Test des statistiques avec plusieurs rêves positifs.
@@ -471,7 +468,6 @@ class StatisticsAndProfilingTest(TestCase):
         self.assertEqual(stats['emotion_dominante'], 'joie')
         self.assertEqual(stats['emotion_dominante_percentage'], 50)
         
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_get_profil_onirique_stats_multiple_dreams_negative(self, mock_themes):
         """
         Test des statistiques avec profil "cauchemardeur".
@@ -511,7 +507,6 @@ class StatisticsAndProfilingTest(TestCase):
         self.assertEqual(stats['emotion_dominante'], 'peur')
         self.assertEqual(stats['emotion_dominante_percentage'], 50)
 
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_get_profil_onirique_stats_balanced_dreams(self, mock_themes):
         """
         Test des statistiques avec rêves équilibrés.
@@ -549,7 +544,6 @@ class StatisticsAndProfilingTest(TestCase):
         )
         self.assertEqual(stats['pourcentage_reveuse'], 50)
 
-    @patch('diary.utils.analyze_themes_with_mistral')
     def test_get_profil_onirique_stats_large_dataset(self, mock_themes):
         """
         Test des statistiques avec un grand nombre de rêves.
