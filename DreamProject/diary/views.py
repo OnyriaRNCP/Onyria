@@ -8,6 +8,7 @@ from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 from django.contrib.auth.decorators import login_required
+from django.conf import settings
 from .models import Dream
 from .utils import (
     analyze_emotions,
@@ -43,6 +44,7 @@ from .metrics.runtime import (
 
 
 # ----- VUES PRINCIPALES ----- #
+
 
 @login_required
 def dream_diary_view(request):

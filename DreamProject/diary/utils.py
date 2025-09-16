@@ -62,7 +62,7 @@ _nlp_cache = {}
 _bertopic_cache = {}
 
 def get_nlp_model():
-    """Cacher le modèle spaCy pour éviter de le recharger"""
+    """Cache le modèle spaCy pour éviter de le recharger"""
     if 'nlp' not in _nlp_cache:
         try:
             import spacy
@@ -101,16 +101,16 @@ def get_bertopic_model():
             
             # Configuration simplifiée : utiliser TF-IDF + PCA + KMeans
             
-            # Vectorizer TF-IDF
+            # Vectorizer TF-IDF 
             vectorizer_model = TfidfVectorizer(
                 ngram_range=(1, 2),
-                max_features=150,  # Limiter les features
+                max_features=100,  # Limiter les features
                 min_df=1,
                 max_df=0.8,
-                stop_words=None # On gère les stopwords dans le preprocessing
+                stop_words=None  # On gère les stopwords dans le preprocessing
             )
             
-            # PCA pour réduction dimensionnelle
+            # PCA pour réduction dimensionnelle 
             dimensionality_model = PCA(n_components=5, random_state=42)
             
             # KMeans pour clustering
@@ -118,7 +118,7 @@ def get_bertopic_model():
             
             _bertopic_cache['bertopic'] = BERTopic(
                 vectorizer_model=vectorizer_model,
-                umap_model=dimensionality_model,  
+                umap_model=dimensionality_model,
                 hdbscan_model=cluster_model,
                 min_topic_size=2,
                 nr_topics=3,  # Fixer le nombre de topics
@@ -827,6 +827,7 @@ def generate_image_from_text(user, prompt_text, dream_instance):
 
 # ---------- THEMATIQUE ----------
 
+
 def _preprocess_for_analysis(text: str) -> str:
     """Préprocesse le texte avec spaCy pour analyse thématique"""
     # Import différé des outils NLP
@@ -837,7 +838,7 @@ def _preprocess_for_analysis(text: str) -> str:
         return _basic_preprocess(text, french_stopwords, stemmer)
 
     text = text.lower()
-    # AMÉLIORATION : Préserver plus de ponctuation contextuelle
+    # Préserver plus de ponctuation contextuelle
     text = re.sub(r'[^\w\s\'-]', ' ', text)  # Garder apostrophes et tirets
 
     doc = nlp(text)
@@ -847,7 +848,7 @@ def _preprocess_for_analysis(text: str) -> str:
         lemma = token.lemma_.lower()
         original = token.text.lower()
 
-        # AMÉLIORATION : Critères de sélection plus inclusifs
+        # Critères de sélection plus inclusifs
         keep_token = False
         
         # Noms et noms propres (priorité)
@@ -876,14 +877,14 @@ def _preprocess_for_analysis(text: str) -> str:
         ]:
             keep_token = True
 
-        # FILTRAGE : Conserver seulement les tokens pertinents
+        # Conserver seulement les tokens pertinents
         if keep_token and len(lemma) >= 2:
             # Utiliser lemma pour la cohérence, mais garder original si plus informatif
             final_token = lemma
             
             # Préférer forme originale pour certains cas
             if (
-                original not in french_stopwords
+                original not in french_stopwords 
                 and original not in DREAM_SPECIFIC_STOPWORDS
                 and not original.isdigit()
                 and token.is_alpha
@@ -916,7 +917,7 @@ def _preprocess_for_analysis(text: str) -> str:
 
 
 def _basic_preprocess(text: str, french_stopwords=None, stemmer=None) -> str:
-    """Préprocessing basique sans spaCy pour le fallback"""
+    """Préprocessing basique sans spaCy"""
     if not text:
         return ""
 
@@ -930,9 +931,9 @@ def _basic_preprocess(text: str, french_stopwords=None, stemmer=None) -> str:
 
     filtered = []
     for token in tokens:
-        # AMÉLIORATION : Critères plus permissifs pour conserver plus de contexte
+        # Critères plus permissifs pour conserver plus de contexte
         if (
-            len(token) >= 3  # Réduire le minimum à 3 caractères
+            len(token) >= 3  # Réduire le minimum 3 caractères
             and token not in french_stopwords
             and token not in DREAM_SPECIFIC_STOPWORDS
             and not token.isdigit()
@@ -1193,7 +1194,7 @@ def get_themes_timeline_filtered(user, period=None, start_date=None, end_date=No
         return [], []
     
     # Récupérer la liste des thèmes à suivre dans la timeline
-    themes_to_track = global_themes_analysis['themes_list'][:5]  # Max 5 thèmes pour lisibilité
+    themes_to_track = global_themes_analysis['themes_list'][:10]  # Max 10 thèmes pour lisibilité
     
     logger.info(f"Thèmes à suivre dans timeline: {themes_to_track}")
 
@@ -1212,7 +1213,7 @@ def get_themes_timeline_filtered(user, period=None, start_date=None, end_date=No
         period_key = dream.created_at.strftime(date_format)
         dreams_by_period[period_key].append(dream.transcription)
 
-    #Pour chaque période, compter SEULEMENT les thèmes prédéfinis
+    # Pour chaque période, compter SEULEMENT les thèmes prédéfinis
     timeline_data = []
 
     for period_key in sorted(dreams_by_period.keys()):
@@ -1250,7 +1251,7 @@ def get_themes_timeline_filtered(user, period=None, start_date=None, end_date=No
     return timeline_data, themes_to_track
 
 def analyze_recurring_themes(user, min_dreams=2, min_occurrence=2):
-
+    
     logger.info(f"Analyse thématiques récurrentes user {user.id}")
     
     # Utiliser la fonction harmonisée qui contient déjà toute la logique
