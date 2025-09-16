@@ -18,71 +18,73 @@
 <!-- Section 1: Types de rêves avec bouton filtrer amélioré -->
 <div class="mb-8">
   <!-- Bouton Filtrer amélioré -->
-  <div class="relative inline-block mb-8">
-    <button id="filterToggle" class="btn-filter">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.707A1 1 0 013 7V4z"></path>
-      </svg>
-      Filtrer les données
-      <svg class="w-4 h-4 chevron-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-      </svg>
-    </button>
+  <div class="flex justify-center mb-8">
+    <div class="relative inline-block">
+      <button id="filterToggle" class="btn-filter">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.707A1 1 0 013 7V4z"></path>
+        </svg>
+        Filtrer les données
+        <svg class="w-4 h-4 chevron-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+        </svg>
+      </button>
     
-    <!-- Menu déroulant -->
-    <div id="filterDropdown" class="filter-dropdown absolute top-full left-0 mt-3">
-      <!-- Section Période -->
-      <div class="mb-6">
-        <label class="filter-section-label">
-            Période d'analyse
-        </label>
-        <select id="periodSelect" class="filter-select">
-          <option value="all" {% if current_period == 'all' %}selected{% endif %}>Toutes les données disponibles</option>
-          <option value="month" {% if current_period == 'month' %}selected{% endif %}>30 derniers jours</option>
-          <option value="3months" {% if current_period == '3months' %}selected{% endif %}>3 derniers mois</option>
-          <option value="6months" {% if current_period == '6months' %}selected{% endif %}>6 derniers mois</option>
-          <option value="1year" {% if current_period == '1year' %}selected{% endif %}>Dernière année</option>
-          <option value="custom" {% if current_period == 'custom' %}selected{% endif %}>Période personnalisée</option>
-        </select>
-      </div>
-      
-      <!-- Champs dates personnalisées -->
-      <div id="customDateRange" class="mb-6 {% if current_period != 'custom' %}hidden{% endif %}">
-        <label class="filter-section-label">
-            Dates personnalisées
-        </label>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <input type="date" id="startDate" class="filter-input" 
-                   value="{{ current_start_date|default:'' }}"
-                   placeholder="Date de début">
-            <div class="text-xs text-gray-500 mt-1 px-1">Date de début</div>
-          </div>
-          <div>
-            <input type="date" id="endDate" class="filter-input" 
-                   value="{{ current_end_date|default:'' }}"
-                   placeholder="Date de fin">
-            <div class="text-xs text-gray-500 mt-1 px-1">Date de fin</div>
-          </div>
+      <!-- Menu déroulant -->
+      <div id="filterDropdown" class="filter-dropdown absolute top-full left-0 mt-3">
+        <!-- Section Période -->
+        <div class="mb-6">
+          <label class="filter-section-label">
+              Période d'analyse
+          </label>
+          <select id="periodSelect" class="filter-select">
+            <option value="all" {% if current_period == 'all' %}selected{% endif %}>Toutes les données disponibles</option>
+            <option value="month" {% if current_period == 'month' %}selected{% endif %}>30 derniers jours</option>
+            <option value="3months" {% if current_period == '3months' %}selected{% endif %}>3 derniers mois</option>
+            <option value="6months" {% if current_period == '6months' %}selected{% endif %}>6 derniers mois</option>
+            <option value="1year" {% if current_period == '1year' %}selected{% endif %}>Dernière année</option>
+            <option value="custom" {% if current_period == 'custom' %}selected{% endif %}>Période personnalisée</option>
+          </select>
         </div>
-        <button id="applyCustomFilter" class="btn-apply">
-            Appliquer la sélection
-        </button>
-      </div>
-      
-      <!-- Divider -->
-      <div class="filter-divider"></div>
-      
-      <!-- Affichage période active -->
-      <div class="period-display">
-        <div class="period-display-text">
-          <strong>Période active :</strong> {{ date_range_display }}
-          <br>
-          <span class="opacity-75">{{ dream_type_stats.total }} rêve{{ dream_type_stats.total|pluralize }} analysé{{ dream_type_stats.total|pluralize }}</span>
+        
+        <!-- Champs dates personnalisées -->
+        <div id="customDateRange" class="mb-6 {% if current_period != 'custom' %}hidden{% endif %}">
+          <label class="filter-section-label">
+              Dates personnalisées
+          </label>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <input type="date" id="startDate" class="filter-input" 
+                    value="{{ current_start_date|default:'' }}"
+                    placeholder="Date de début">
+              <div class="text-xs text-gray-500 mt-1 px-1">Date de début</div>
+            </div>
+            <div>
+              <input type="date" id="endDate" class="filter-input" 
+                    value="{{ current_end_date|default:'' }}"
+                    placeholder="Date de fin">
+              <div class="text-xs text-gray-500 mt-1 px-1">Date de fin</div>
+            </div>
+          </div>
+          <button id="applyCustomFilter" class="btn-apply">
+              Appliquer la sélection
+          </button>
+        </div>
+        
+        <!-- Divider -->
+        <div class="filter-divider"></div>
+        
+        <!-- Affichage période active -->
+        <div class="period-display">
+          <div class="period-display-text">
+            <strong>Période active :</strong> {{ date_range_display }}
+            <br>
+            <span class="opacity-75">{{ dream_type_stats.total }} rêve{{ dream_type_stats.total|pluralize }} analysé{{ dream_type_stats.total|pluralize }}</span>
+          </div>
         </div>
       </div>
     </div>
-  </div>
+</div>
 
   <h2 class="text-2xl font-semibold text-gray-800 mb-6 text-center">
     Types de rêves
@@ -321,11 +323,13 @@
   transform: translateY(-10px) scale(0.95);
   transition: all 0.2s ease-out;
   pointer-events: none;
+  left: 50%;
+  transform: translateX(-50%) translateY(-10px) scale(0.95);
 }
 
 .filter-dropdown.show {
   opacity: 1;
-  transform: translateY(0) scale(1);
+  transform: translateX(-50%) translateY(0) scale(1);
   pointer-events: auto;
 }
 
@@ -1111,14 +1115,14 @@ new Chart(ctxThemes, {
 
 // 6. Graphique timeline - Thématiques avec debugging renforcé
 if (debugThemesTimeline.length > 0 && debugThemesList.length > 0) {
-  console.log('✅ Condition remplie, création du graphique timeline thématiques');
+  console.log('Condition remplie, création du graphique timeline thématiques');
   
   const ctxThemesTimeline = document.getElementById('themesTimelineChart').getContext('2d');
   
   if (!ctxThemesTimeline) {
-    console.error('❌ Element canvas themesTimelineChart introuvable !');
+    console.error('Element canvas themesTimelineChart introuvable !');
   } else {
-    console.log('✅ Canvas trouvé, création des datasets...');
+    console.log('Canvas trouvé, création des datasets...');
     
     // Créer les datasets pour chaque thématique avec debug
     const themesDatasets = debugThemesList.map((theme, index) => {
@@ -1236,13 +1240,13 @@ if (debugThemesTimeline.length > 0 && debugThemesList.length > 0) {
           }
         }
       });
-      console.log('✅ Graphique timeline thématiques créé avec succès');
+      console.log(' Graphique timeline thématiques créé avec succès');
     } catch (error) {
-      console.error('❌ Erreur lors de la création du graphique:', error);
+      console.error(' Erreur lors de la création du graphique:', error);
     }
   }
 } else {
-  console.log('❌ Condition NON remplie pour timeline thématiques:');
+  console.log(' Condition NON remplie pour timeline thématiques:');
   console.log('- debugThemesTimeline.length:', debugThemesTimeline.length);
   console.log('- debugThemesList.length:', debugThemesList.length);
   console.log('- Condition complète:', debugThemesTimeline.length > 0 && debugThemesList.length > 0);

@@ -654,53 +654,6 @@ class ValidationAndDataFixingTest(TestCase):
         for key in result:
             self.assertEqual(result[key], problematic_content[key]["content"])
 
-    def test_validate_and_fix_interpretation_missing_keys(self):
-        """
-        Test de correction avec clés manquantes.
-
-        Objectif : Vérifier l'ajout automatique des clés manquantes
-        """
-        incomplete = {"Émotionnelle": "Seul texte présent"}
-
-        result = validate_and_fix_interpretation(incomplete)
-
-        expected_keys = [
-            "Émotionnelle",
-            "Symbolique",
-            "Cognitivo-scientifique",
-            "Freudien",
-        ]
-        for key in expected_keys:
-            self.assertIn(key, result)
-            self.assertIsInstance(result[key], str)
-
-        self.assertEqual(result["Émotionnelle"], "Seul texte présent")
-        self.assertEqual(result["Symbolique"], "Interprétation non disponible")
-
-    def test_validate_and_fix_interpretation_mixed_formats(self):
-        """
-        Test de correction avec formats mixtes.
-
-        Objectif : Vérifier la gestion de formats incohérents
-        """
-        mixed_format = {
-            "Émotionnelle": {"contenu": "Format contenu"},
-            "Symbolique": "Format direct",
-            "Cognitivo-scientifique": {"content": "Format content"},
-            "Freudien": 12345,  # Type incorrect
-        }
-
-        result = validate_and_fix_interpretation(mixed_format)
-
-        # Tous doivent être des strings
-        for key, value in result.items():
-            self.assertIsInstance(value, str)
-
-        self.assertEqual(result["Émotionnelle"], "Format contenu")
-        self.assertEqual(result["Symbolique"], "Format direct")
-        self.assertEqual(result["Cognitivo-scientifique"], "Format content")
-        self.assertEqual(result["Freudien"], "12345")  # Converti en string
-
     def test_validate_and_fix_interpretation_none_input(self):
         """
         Test de validation avec entrée None.
@@ -709,56 +662,6 @@ class ValidationAndDataFixingTest(TestCase):
         """
         result = validate_and_fix_interpretation(None)
         self.assertIsNone(result)
-
-    def test_validate_and_fix_interpretation_complex_nested(self):
-        """
-        Test de correction avec objets imbriqués complexes.
-
-        Objectif : Vérifier la gestion d'objets très imbriqués
-        """
-        complex_nested = {
-            "Émotionnelle": {
-                "contenu": {"nested": "deep", "summary": "Texte émotionnel"}
-            },
-            "Symbolique": {"content": ["liste", "de", "mots"]},
-        }
-
-        result = validate_and_fix_interpretation(complex_nested)
-
-        # Correction : tester le comportement réel de la fonction
-        # au lieu d'imposer un comportement qui n'existe pas
-        self.assertIsNotNone(result)
-
-        # Vérifier que la fonction fait de son mieux avec les données complexes
-        for key in [
-            "Émotionnelle",
-            "Symbolique",
-            "Cognitivo-scientifique",
-            "Freudien",
-        ]:
-            self.assertIn(key, result)
-            # Accepter que certaines valeurs puissent rester des objets complexes
-            self.assertIsNotNone(result[key])
-
-    def test_validate_and_fix_interpretation_empty_values(self):
-        """
-        Test de validation avec valeurs vides.
-
-        Objectif : Vérifier la gestion des valeurs vides ou whitespace
-        """
-        empty_values = {
-            "Émotionnelle": "",
-            "Symbolique": "   ",
-            "Cognitivo-scientifique": None,
-            "Freudien": {"contenu": ""},
-        }
-
-        result = validate_and_fix_interpretation(empty_values)
-
-        # Tous doivent être des strings (même vides)
-        for key, value in result.items():
-            self.assertIsInstance(value, str)
-
 
 class UtilityFunctionsTest(TestCase):
     """

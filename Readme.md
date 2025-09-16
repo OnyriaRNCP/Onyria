@@ -224,7 +224,7 @@ gunicorn Onyria.wsgi:application --chdir DreamProject
 ```
 --> Gunicorn exécute l'application Django en production.
 
---> WhiteNoise permet de servir directement les fichiers statiques, sans avoir besoin d'un serveur web externe (NGINX, Apache…).
+--> Par défaut, on travaille avec 1 Workers et 1 Trhead
 
 ## Fichiers statiques
 
