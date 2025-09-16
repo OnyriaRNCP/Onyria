@@ -370,12 +370,12 @@ def dream_followup(request):
         request.user, period, start_date, end_date
     )
     
-    # ✅ HARMONISATION : Récupérer d'abord les stats thématiques (source unique)
+    # Récupérer d'abord les stats thématiques (source unique)
     themes_stats = get_themes_stats_filtered(
         request.user, period, start_date, end_date
     )
     
-    # ✅ HARMONISATION : Utiliser la liste de thèmes des stats pour la timeline
+    # Utiliser la liste de thèmes des stats pour la timeline
     if themes_stats['has_data']:
         themes_timeline, themes_list = get_themes_timeline_filtered(
             request.user, period, start_date, end_date

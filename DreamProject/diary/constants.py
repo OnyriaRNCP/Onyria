@@ -148,7 +148,6 @@ DREAM_SPECIFIC_STOPWORDS = {
     'chose',
     'truc',
     'machin',
-    'endroit',
     'côté',
     'genre',
     'espèce',
