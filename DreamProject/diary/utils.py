@@ -18,7 +18,6 @@ from django.conf import settings
 from dotenv import load_dotenv
 from groq import Groq
 from mistralai import Mistral
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from .metrics.runtime import metric_ok, metric_fail, metric_fallback, metric_retry
 from collections import Counter, defaultdict
 from .models import Dream
@@ -63,7 +62,7 @@ _nlp_cache = {}
 _bertopic_cache = {}
 
 def get_nlp_model():
-    """Cache le modèle spaCy pour éviter de le recharger"""
+    """Cacher le modèle spaCy pour éviter de le recharger"""
     if 'nlp' not in _nlp_cache:
         try:
             import spacy
@@ -92,7 +91,7 @@ def get_nltk_tools():
     return _nlp_cache.get('french_stopwords', set()), _nlp_cache.get('stemmer')
 
 def get_bertopic_model():
-    """Import et configuration différés de BERTopic - VERSION SIMPLIFIÉE SANS SentenceTransformer"""
+    """Import et configuration différés de BERTopic"""
     if 'bertopic' not in _bertopic_cache:
         try:
             from bertopic import BERTopic
@@ -100,27 +99,27 @@ def get_bertopic_model():
             from sklearn.decomposition import PCA
             from sklearn.cluster import KMeans
             
-            # Configuration simplifiée : utiliser TF-IDF + PCA + KMeans au lieu de SentenceTransformer + UMAP + HDBSCAN
+            # Configuration simplifiée : utiliser TF-IDF + PCA + KMeans
             
-            # Vectorizer TF-IDF (plus léger que SentenceTransformer)
+            # Vectorizer TF-IDF
             vectorizer_model = TfidfVectorizer(
                 ngram_range=(1, 2),
-                max_features=100,  # Limiter les features
+                max_features=150,  # Limiter les features
                 min_df=1,
                 max_df=0.8,
-                stop_words=None  # On gère les stopwords dans le preprocessing
+                stop_words=None # On gère les stopwords dans le preprocessing
             )
             
-            # PCA pour réduction dimensionnelle (remplace UMAP)
+            # PCA pour réduction dimensionnelle
             dimensionality_model = PCA(n_components=5, random_state=42)
             
-            # KMeans pour clustering (remplace HDBSCAN)
+            # KMeans pour clustering
             cluster_model = KMeans(n_clusters=3, random_state=42, n_init=10)
             
             _bertopic_cache['bertopic'] = BERTopic(
                 vectorizer_model=vectorizer_model,
-                umap_model=dimensionality_model,  # BERTopic accepte PCA à la place d'UMAP
-                hdbscan_model=cluster_model,      # BERTopic accepte KMeans à la place d'HDBSCAN
+                umap_model=dimensionality_model,  
+                hdbscan_model=cluster_model,
                 min_topic_size=2,
                 nr_topics=3,  # Fixer le nombre de topics
                 verbose=False,
@@ -193,20 +192,16 @@ def validate_and_fix_interpretation(interpretation_data):
                 fixed_interpretation[key] = value
 
             else:
-                # Rejet immédiat si type invalide
-                logger.warning(f"Type invalide pour {key}: {type(value)} - interprétation rejetée")
-                return None
+                # Coercition robuste en chaîne
+                fixed_interpretation[key] = _to_str(value)
+                logger.warning(
+                    f"Conversion forcée en string pour {key}: {type(value)}"
+                )
 
         else:
-            # Rejet immédiat si clé manquante
-            logger.warning(f"Clé manquante: {key} - interprétation rejetée")
-            return None
-
-    # Vérifier que toutes les valeurs sont des strings non vides
-    for key, value in fixed_interpretation.items():
-        if not isinstance(value, str) or not value.strip():
-            logger.warning(f"Valeur vide ou invalide pour {key} - interprétation rejetée")
-            return None
+            # Clé manquante, ajouter un placeholder explicite
+            fixed_interpretation[key] = "Interprétation non disponible"
+            logger.warning(f"Clé manquante: {key}")
 
     logger.debug("Validation interprétation terminée avec succès")
     return fixed_interpretation
@@ -351,10 +346,10 @@ def transcribe_audio(audio_data, language="fr"):
             temp_file_path = temp_file.name
 
         # Système de retry avec backoff exponentiel et configuration centralisée
-        for attempt in range(1, AI_CONFIG['MAX_RETRIES'] + 1):
+        for attempt in range(1, AI_CONFIG['TRANSCRIBE_MAX_RETRIES'] + 1):
             try:
                 logger.info(
-                    f"Transcription tentative {attempt}/{AI_CONFIG['MAX_RETRIES']}"
+                    f"Transcription tentative {attempt}/{AI_CONFIG['TRANSCRIBE_MAX_RETRIES']}"
                 )
 
                 with open(temp_file_path, "rb") as audio_file:
@@ -369,6 +364,7 @@ def transcribe_audio(audio_data, language="fr"):
                     )
 
                 duration = time.time() - start_time
+
                 
                 metric_retry("groq", "transcribe", total_retry_count, total_backoff_ms)
 
@@ -406,10 +402,10 @@ def transcribe_audio(audio_data, language="fr"):
                 last_error = e
                 if (
                     _is_retryable_transcription_error(e)
-                    and attempt < AI_CONFIG['MAX_RETRIES']
+                    and attempt < AI_CONFIG['TRANSCRIBE_MAX_RETRIES']
                 ):
                     sleep_s = round(
-                        AI_CONFIG['BACKOFF_BASE'] ** attempt, 2
+                        AI_CONFIG['TRANSCRIBE_BACKOFF_BASE'] ** attempt, 2
                     )
                     sleep_ms = int(sleep_s * 1000)
 
@@ -482,8 +478,8 @@ def transcribe_audio(audio_data, language="fr"):
 
 # Concrétisation paramétrable depuis settings.AI_CONFIG 
 try:
-    FALLBACK_STATUS = set(AI_CONFIG['ANALYZE_ERROR_STATUS'])
-    FALLBACK_KEYWORDS = tuple(AI_CONFIG['ANALYZE_FALLBACK_KEYWORDS'])
+    FALLBACK_STATUS = set(AI_CONFIG['FALLBACK_STATUS'])
+    FALLBACK_KEYWORDS = tuple(AI_CONFIG['FALLBACK_KEYWORDS'])
 except KeyError as e:
     logger.error(f"AI_CONFIG manquant: {e}. Règles de fallback vides par sécurité.")
     FALLBACK_STATUS = set()
@@ -574,8 +570,8 @@ def safe_mistral_call(model, messages, operation="API call"):
 
             # On peut tester le modèle suivant
             can_fallback = (
-                (status_code in AI_CONFIG['ANALYZE_ERROR_STATUS']) or
-                any(k in merged_msg for k in AI_CONFIG['ANALYZE_FALLBACK_KEYWORDS'])
+                (status_code in AI_CONFIG['FALLBACK_STATUS']) or
+                any(k in merged_msg for k in AI_CONFIG['FALLBACK_KEYWORDS'])
             )
 
             if can_fallback:
@@ -588,7 +584,6 @@ def safe_mistral_call(model, messages, operation="API call"):
                 log_messages = {
                     "quota": f"[{operation}] QUOTA ATTEINT - {current_model}",
                     "rate_limit": f"[{operation}] RATE LIMIT - {current_model}",
-                    "unknown": f"[{operation}] ERREUR INCONNUE - {current_model}",
                 }
 
                 logger.warning(log_messages.get(reason, f"[{operation}] Erreur {current_model}: {e}"))
@@ -764,43 +759,25 @@ def generate_image_from_text(user, prompt_text, dream_instance):
         metric_fail("mistral", "image", 0, reason="no_api_key")
         return False
 
-    operation = "image"
-    current_model = AI_CONFIG['IMAGE_GENERATION_MODEL']
-
     logger.info(f"Génération image pour rêve {dream_instance.id}")
     start_time = time.time()
 
-    system_instructions = read_file("instructions_image.txt")
-    max_retries = AI_CONFIG["MAX_RETRIES"]
-    backoff_base = AI_CONFIG["BACKOFF_BASE"]
-    timeout_s = AI_CONFIG["API_TIMEOUT"]
+    try:
+        system_instructions = read_file("instructions_image.txt")
 
-    total_retry_count = 0
-    total_backoff_ms = 0
-
-    # baseline: retry=0 (comme transcription)
-    metric_retry("mistral", operation, total_retry_count, total_backoff_ms)
-
-    for attempt in range(1, max_retries + 1):
         try:
             agent = mistral_client.beta.agents.create(
-                model=current_model,
+                model=AI_CONFIG['IMAGE_GENERATION_MODEL'],
                 name="Dream Image Agent",
                 instructions=system_instructions,
                 tools=[{"type": "image_generation"}],
                 completion_args={"temperature": 0.3, "top_p": 0.95},
             )
 
-            # Timeout appliqué
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(
-                    mistral_client.beta.conversations.start,
-                    agent_id=agent.id,
-                    inputs=prompt_text,
-                )
-                conversation = future.result(timeout=timeout_s)
+            conversation = mistral_client.beta.conversations.start(
+                agent_id=agent.id, inputs=prompt_text
+            )
 
-            # Extraction du fichier généré
             file_id = next(
                 (
                     item.file_id
@@ -813,74 +790,45 @@ def generate_image_from_text(user, prompt_text, dream_instance):
             )
 
             if not file_id:
-                reason = "no_file"
-                duration = time.time() - start_time
-                logger.warning(f"[{operation.upper()}] AUCUN FICHIER RETOURNÉ - {current_model} "
-                               f"(tentative {attempt}/{max_retries})")
-                metric_fail("mistral", operation, int(duration * 1000), reason=reason)
+                metric_fail("mistral", "image", int((time.time() - start_time) * 1000), reason="no_file")
+                logger.warning("Aucune image générée par l'agent")
                 return False
 
-            # Télécharger le fichier image
             image_bytes = mistral_client.files.download(file_id=file_id).read()
 
+            # Stocker en base64 au lieu de fichier
             dream_instance.set_image_from_bytes(image_bytes, format="PNG")
             dream_instance.save()
 
             duration = time.time() - start_time
-            logger.info(f"Image générée avec succès en {duration:.2f}s (tentative {attempt})")
-
-            metric_ok("mistral", operation, int(duration * 1000))
+            logger.info(f"Image générée avec succès en {duration:.2f}s")
+            metric_ok("mistral", "image", int(duration * 1000))
             return True
 
-        except TimeoutError:
-            duration = time.time() - start_time
-            logger.warning(f"[{operation.upper()}] TIMEOUT après {timeout_s}s (tentative {attempt}/{max_retries})")
-            if attempt == max_retries:
-                logger.error(f"[{operation.upper()}] Échec définitif après {max_retries} tentatives (timeout)")
-                metric_fail("mistral", operation, int(duration * 1000), reason="timeout")
-                return False
-
         except Exception as e:
-            duration = time.time() - start_time
             error_msg = str(e).lower()
 
-            # extraire status + body
-            status_code, body_text = _extract_status_and_text(e)
-            merged_msg = (error_msg + " " + body_text.lower()).strip()
+            # Valeur par défaut
+            reason = "unknown"
 
-            # mapper la raison centralisée
-            reason = _map_reason_from_msg(merged_msg, status_code)
+            # Mapping cohérent avec safe_mistral_call
+            reason = _map_reason_from_msg(error_msg, None)
 
-            # décider si retryable
-            is_retryable = (
-                (status_code in AI_CONFIG['ANALYZE_ERROR_STATUS']) or
-                any(k in merged_msg for k in AI_CONFIG['ANALYZE_RETRY_KEYWORDS'])
-            )
+            duration = time.time() - start_time
+            logger.error(f"Erreur image ({reason}) après {duration:.2f}s: {e}")
+            metric_fail("mistral", "image", int(duration * 1000), reason=reason)
+            return False
 
-            if is_retryable and attempt < max_retries:
-                sleep_s = min(backoff_base ** attempt, AI_CONFIG.get("BACKOFF_MAX_DELAY_S", 5))
-                sleep_ms = int(sleep_s * 1000)
-
-                total_retry_count += 1
-                total_backoff_ms += sleep_ms
-                metric_retry("mistral", operation, total_retry_count, total_backoff_ms)
-
-                logger.warning(f"[{operation.upper()}] Erreur {reason} - retry dans {sleep_s:.2f}s "
-                               f"(tentative {attempt}/{max_retries}): {e}")
-                time.sleep(sleep_s)
-                continue
-            else:
-                logger.error(f"[{operation.upper()}] Erreur définitive {reason} sur {current_model}: {e}")
-                metric_fail("mistral", operation, int(duration * 1000), reason=reason)
-                return False
-
-    return False
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.error(f"Erreur génération image après {duration:.2f}s: {e}")
+        metric_fail("mistral", "image", int(duration * 1000), reason="exception")
+        return False
 
 # ---------- THEMATIQUE ----------
 
-
 def _preprocess_for_analysis(text: str) -> str:
-    """Préprocesse le texte avec spaCy pour analyse thématique - version améliorée"""
+    """Préprocesse le texte avec spaCy pour analyse thématique"""
     # Import différé des outils NLP
     nlp = get_nlp_model()
     french_stopwords, stemmer = get_nltk_tools()
@@ -889,7 +837,7 @@ def _preprocess_for_analysis(text: str) -> str:
         return _basic_preprocess(text, french_stopwords, stemmer)
 
     text = text.lower()
-    # ✅ AMÉLIORATION : Préserver plus de ponctuation contextuelle
+    # AMÉLIORATION : Préserver plus de ponctuation contextuelle
     text = re.sub(r'[^\w\s\'-]', ' ', text)  # Garder apostrophes et tirets
 
     doc = nlp(text)
@@ -899,7 +847,7 @@ def _preprocess_for_analysis(text: str) -> str:
         lemma = token.lemma_.lower()
         original = token.text.lower()
 
-        # ✅ AMÉLIORATION : Critères de sélection plus inclusifs
+        # AMÉLIORATION : Critères de sélection plus inclusifs
         keep_token = False
         
         # Noms et noms propres (priorité)
@@ -928,14 +876,14 @@ def _preprocess_for_analysis(text: str) -> str:
         ]:
             keep_token = True
 
-        # ✅ FILTRAGE : Conserver seulement les tokens pertinents
+        # FILTRAGE : Conserver seulement les tokens pertinents
         if keep_token and len(lemma) >= 2:
             # Utiliser lemma pour la cohérence, mais garder original si plus informatif
             final_token = lemma
             
-            # ✅ AMÉLIORATION : Préférer forme originale pour certains cas
+            # Préférer forme originale pour certains cas
             if (
-                original not in french_stopwords 
+                original not in french_stopwords
                 and original not in DREAM_SPECIFIC_STOPWORDS
                 and not original.isdigit()
                 and token.is_alpha
@@ -952,7 +900,7 @@ def _preprocess_for_analysis(text: str) -> str:
                     if not any(pattern in final_token for pattern in exclude_patterns):
                         significant_tokens.append(final_token)
 
-    # ✅ AMÉLIORATION : Déduplication intelligente en gardant la forme la plus informative
+    # Déduplication intelligente en gardant la forme la plus informative
     unique_tokens = []
     seen_roots = set()
     
@@ -968,7 +916,7 @@ def _preprocess_for_analysis(text: str) -> str:
 
 
 def _basic_preprocess(text: str, french_stopwords=None, stemmer=None) -> str:
-    """Préprocessing basique sans spaCy - version améliorée"""
+    """Préprocessing basique sans spaCy pour le fallback"""
     if not text:
         return ""
 
@@ -982,9 +930,9 @@ def _basic_preprocess(text: str, french_stopwords=None, stemmer=None) -> str:
 
     filtered = []
     for token in tokens:
-        # ✅ AMÉLIORATION : Critères plus permissifs pour conserver plus de contexte
+        # AMÉLIORATION : Critères plus permissifs pour conserver plus de contexte
         if (
-            len(token) >= 3  # Réduire le minimum de 4 à 3 caractères
+            len(token) >= 3  # Réduire le minimum à 3 caractères
             and token not in french_stopwords
             and token not in DREAM_SPECIFIC_STOPWORDS
             and not token.isdigit()
@@ -1051,7 +999,7 @@ def _bertopic_analysis(dream_texts: List[str], total_dreams: int):
         return None
 
 def _category_analysis(dream_texts: List[str], total_dreams: int):
-    """Analyse par catégories prédéfinies pour petits datasets - version améliorée"""
+    """Analyse par catégories prédéfinies pour petits datasets"""
     # Import différé des outils NLTK
     french_stopwords, stemmer = get_nltk_tools()
     
@@ -1091,7 +1039,7 @@ def _category_analysis(dream_texts: List[str], total_dreams: int):
         for category in detected_categories:
             theme_document_freq[category] += 1
 
-    # AMÉLIORATION : Stratégie adaptative selon le volume de données
+    # Stratégie adaptative selon le volume de données
     if total_dreams <= 3:
         # Pour très peu de rêves, utiliser la fréquence des mots
         recurring_themes = [
@@ -1176,7 +1124,6 @@ def get_themes_stats_filtered(user, period=None, start_date=None, end_date=None)
             'message': f'Au moins 2 rêves nécessaires pour détecter des thématiques',
         }
 
-    # ✅ UTILISER LA MÊME LOGIQUE qu'analyze_recurring_themes
     bertopic_model, bertopic_available = get_bertopic_model()
     if total_dreams >= 8 and bertopic_available:
         themes_results = _bertopic_analysis(dream_texts, total_dreams)
@@ -1217,7 +1164,7 @@ def get_themes_stats_filtered(user, period=None, start_date=None, end_date=None)
         'top_theme': top_theme,
         'has_data': True,
         'method': method,
-        # ✅ NOUVEAU : Retourner les thèmes bruts pour réutilisation
+        # Retourner les thèmes bruts pour réutilisation
         'themes_list': [theme_name.capitalize() for theme_name, _ in themes_results],
         'raw_themes_results': themes_results,
     }
@@ -1239,18 +1186,18 @@ def get_themes_timeline_filtered(user, period=None, start_date=None, end_date=No
     if dreams.count() < 2:
         return [], []
 
-    # ✅ ÉTAPE 1 : Obtenir les thèmes globaux de la période (cohérence garantie)
+    # Obtenir les thèmes globaux de la période (cohérence garantie)
     global_themes_analysis = get_themes_stats_filtered(user, period, start_date, end_date)
     
     if not global_themes_analysis['has_data']:
         return [], []
     
     # Récupérer la liste des thèmes à suivre dans la timeline
-    themes_to_track = global_themes_analysis['themes_list'][:10]  # Max 10 thèmes pour lisibilité
+    themes_to_track = global_themes_analysis['themes_list'][:5]  # Max 5 thèmes pour lisibilité
     
     logger.info(f"Thèmes à suivre dans timeline: {themes_to_track}")
 
-    # ✅ ÉTAPE 2 : Grouper les rêves par période temporelle
+    # Grouper les rêves par période temporelle
     if period in ['month', '3months']:
         # Groupement par semaine pour périodes courtes
         date_format = '%Y-W%U'
@@ -1265,7 +1212,7 @@ def get_themes_timeline_filtered(user, period=None, start_date=None, end_date=No
         period_key = dream.created_at.strftime(date_format)
         dreams_by_period[period_key].append(dream.transcription)
 
-    # ✅ ÉTAPE 3 : Pour chaque période, compter SEULEMENT les thèmes prédéfinis
+    #Pour chaque période, compter SEULEMENT les thèmes prédéfinis
     timeline_data = []
 
     for period_key in sorted(dreams_by_period.keys()):
@@ -1279,7 +1226,7 @@ def get_themes_timeline_filtered(user, period=None, start_date=None, end_date=No
         for theme in themes_to_track:
             period_data[theme] = 0
 
-        # ✅ COMPTER SEULEMENT les thèmes qui correspondent à notre liste globale
+        # COMPTER SEULEMENT les thèmes qui correspondent à notre liste globale
         if len(texts) >= 1:
             # Utiliser la même méthode d'analyse que pour les stats globales
             bertopic_model, bertopic_available = get_bertopic_model()
@@ -1303,9 +1250,7 @@ def get_themes_timeline_filtered(user, period=None, start_date=None, end_date=No
     return timeline_data, themes_to_track
 
 def analyze_recurring_themes(user, min_dreams=2, min_occurrence=2):
-    """
-    MISE À JOUR : Utilise maintenant get_themes_stats_filtered pour éviter la duplication
-    """
+
     logger.info(f"Analyse thématiques récurrentes user {user.id}")
     
     # Utiliser la fonction harmonisée qui contient déjà toute la logique
@@ -1444,7 +1389,6 @@ def get_date_filter_queryset(
 def get_dream_type_stats_filtered(
     user, period=None, start_date=None, end_date=None
 ):
-    """Version filtrée de get_dream_type_stats"""
     dreams = get_date_filter_queryset(user, period, start_date, end_date)
     total = dreams.count()
 
@@ -1470,7 +1414,6 @@ def get_dream_type_stats_filtered(
 def get_dream_type_timeline_filtered(
     user, period=None, start_date=None, end_date=None
 ):
-    """Version filtrée de get_dream_type_timeline"""
     dreams = (
         get_date_filter_queryset(user, period, start_date, end_date)
         .annotate(date_only=TruncDate('created_at'))
@@ -1503,7 +1446,6 @@ def get_dream_type_timeline_filtered(
 def get_emotions_stats_filtered(
     user, period=None, start_date=None, end_date=None
 ):
-    """Version filtrée de get_emotions_stats"""
     dreams = get_date_filter_queryset(
         user, period, start_date, end_date
     ).exclude(dominant_emotion__isnull=True)
@@ -1528,7 +1470,6 @@ def get_emotions_stats_filtered(
 def get_emotions_timeline_filtered(
     user, period=None, start_date=None, end_date=None
 ):
-    """Version filtrée de get_emotions_timeline"""
     dreams = (
         get_date_filter_queryset(user, period, start_date, end_date)
         .exclude(dominant_emotion__isnull=True)
@@ -1635,21 +1576,36 @@ def format_interpretation(raw):
     """
     Normalise l'interprétation d'un rêve pour garantir un format stable.
     - raw peut être une string JSON ou déjà un dict
-    - Retourne None si l'interprétation est invalide pour déclencher le message générique
+    - Retourne toujours un dict avec les 4 clés attendues
     """
     if not raw:
-        return None
+        return {
+            "Émotionnelle": "Interprétation non disponible",
+            "Symbolique": "Interprétation non disponible",
+            "Cognitivo-scientifique": "Interprétation non disponible",
+            "Freudien": "Interprétation non disponible",
+        }
 
-    # Si c'est une string JSON → parser
+    # Si c’est une string JSON → parser
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
         except json.JSONDecodeError:
-            return None
+            return {
+                "Émotionnelle": "Format invalide",
+                "Symbolique": "Format invalide",
+                "Cognitivo-scientifique": "Format invalide",
+                "Freudien": "Format invalide",
+            }
 
-    # Si ce n'est pas un dict → rejet
+    # Si ce n’est pas un dict → fallback
     if not isinstance(raw, dict):
-        return None
+        return {
+            "Émotionnelle": str(raw),
+            "Symbolique": str(raw),
+            "Cognitivo-scientifique": str(raw),
+            "Freudien": str(raw),
+        }
 
     # Normalisation via validate_and_fix_interpretation()
     return validate_and_fix_interpretation(raw)

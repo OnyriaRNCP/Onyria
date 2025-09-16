@@ -712,7 +712,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 
-// Fonctions pour appliquer les filtres (à connecter avec votre backend Django)
+// Fonctions pour appliquer les filtres
 function applyFilter(period) {
   const url = new URL(window.location);
   url.searchParams.set('period', period);
@@ -1113,16 +1113,11 @@ new Chart(ctxThemes, {
 });
 {% endif %}
 
-// 6. Graphique timeline - Thématiques avec debugging renforcé
+// 6. Graphique timeline - Thématiques
 if (debugThemesTimeline.length > 0 && debugThemesList.length > 0) {
   console.log('Condition remplie, création du graphique timeline thématiques');
   
   const ctxThemesTimeline = document.getElementById('themesTimelineChart').getContext('2d');
-  
-  if (!ctxThemesTimeline) {
-    console.error('Element canvas themesTimelineChart introuvable !');
-  } else {
-    console.log('Canvas trouvé, création des datasets...');
     
     // Créer les datasets pour chaque thématique avec debug
     const themesDatasets = debugThemesList.map((theme, index) => {
