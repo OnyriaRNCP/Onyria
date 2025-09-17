@@ -173,6 +173,7 @@ class CompleteUserJourneyTest(TestCase):
         mock_interpret.assert_called_once()
         mock_generate.assert_called_once()
 
+    @patch('diary.utils.analyze_recurring_themes')
     def test_user_journey_with_multiple_dreams(self, mock_themes):
         """
         Test du parcours utilisateur avec plusieurs rêves.
@@ -180,10 +181,12 @@ class CompleteUserJourneyTest(TestCase):
         Objectif : Tester l'évolution des statistiques avec plusieurs rêves
         """
         # Mock pour éviter l'appel API
-        mock_themes.return_value = [
-            ("Thèmes récurrents variés", 3),
-            ("Émotions positives", 2)
-        ]
+        mock_themes.return_value = {
+        'top_theme': 'Thèmes récurrents variés',
+        'percentage': 60,
+        'total_dreams': 5,
+        'message': 'Thématiques trouvées',
+        }
         self.client.login(
             email='journey@example.com', password=TEST_USER_PASSWORD
         )
@@ -366,17 +369,19 @@ class MultiUserIsolationTest(TestCase):
             stats.get('statut_reveuse'), 'En proie aux cauchemars'
         )
 
-    
+    @patch('diary.utils.analyze_recurring_themes')
     def test_statistics_isolation_between_users(self, mock_themes):
         """
         Test d'isolation des statistiques entre utilisateurs.
 
         Objectif : VÉrifier que les stats sont calculÉes uniquement sur les rêves de l'utilisateur
         """
-        mock_themes.return_value = [
-        ("Thèmes génériques", 3),
-        ("Émotions variées", 2)
-        ]
+        mock_themes.return_value = {
+        'top_theme': 'Thèmes récurrents variés',
+        'percentage': 100,
+        'total_dreams': 5,
+        'message': 'Thématiques trouvées',
+        }
         
         # User1 : profil très joyeux
         for i in range(5):
@@ -556,6 +561,7 @@ class DataConsistencyTest(TestCase):
             context_dream.dominant_emotion, "en_colere"
         )  # Valeur brute en DB
 
+    @patch('diary.utils.analyze_recurring_themes')
     def test_stats_consistency_with_database(self, mock_themes):
         """
         Test de cohÉrence des statistiques avec la base de donnÉes.
@@ -563,10 +569,12 @@ class DataConsistencyTest(TestCase):
         Objectif : VÉrifier que les stats reflètent exactement les donnÉes DB
         """
         # Mock pour éviter l'appel API
-        mock_themes.return_value = [
-            ("Cohérence des données", 3),
-            ("Distribution équilibrée", 2)
-        ]
+        mock_themes.return_value = {
+        'top_theme': 'Cohérence des données',
+        'percentage': 60,
+        'total_dreams': 5,
+        'message': 'Thématiques trouvées',
+        }
         # Créer des rêves avec distribution connue
         dreams_data = [
             ('Rêve 1', 'rêve', 'joie'),  # 1
@@ -623,6 +631,7 @@ class DataConsistencyTest(TestCase):
             stats['emotion_dominante_percentage'], 60
         )  # 3/5 * 100
 
+    @patch('diary.utils.analyze_recurring_themes')
     def test_label_formatting_consistency(self, mock_themes):
         """
         Test de cohÉrence du formatage des labels.
@@ -630,9 +639,12 @@ class DataConsistencyTest(TestCase):
         Objectif : VÉrifier que les labels sont formatÉs uniformÉment
         """
         # Mock pour éviter l'appel API
-        mock_themes.return_value = [
-            ("Formatage cohérent", 1)
-        ]
+        mock_themes.return_value = {
+        'top_theme': 'Formatage cohérent',
+        'percentage': 100,
+        'total_dreams': 1,
+        'message': 'Thème trouvé',
+        }
         # Créer un rêve avec valeurs brutes
         dream = Dream.objects.create(
             user=self.user,
@@ -683,15 +695,18 @@ class DataConsistencyTest(TestCase):
         self.assertEqual(stats.get('emotion_dominante'), 'Colère')  # Formaté
         # Le statut est calculé, donc peut être différent
 
+    @patch('diary.utils.analyze_recurring_themes')
     def test_theme_analysis_profile_integration(self, mock_themes):
         """
         Test d'intÉgration : thèmes dans le profil onirique.
         """
         # Mock pour contrôler le retour de l'analyse thématique
-        mock_themes.return_value = [
-            ("Vol et liberté", 4),
-            ("Éléments naturels", 3)
-        ]
+        mock_themes.return_value = {
+        'top_theme': 'Vol et liberté',
+        'percentage': 75,
+        'total_dreams': 4,
+        'message': 'Thématiques trouvées',
+        }
         # Créer un profil cohérent avec thèmes récurrents
         dreams_data = [
             ("Vol magique dans la nuit", "rêve", "joie"),
@@ -867,15 +882,18 @@ class WorkflowRobustnessTest(TestCase):
         response = self.client.get(reverse('analyse_from_voice'))
         self.assertEqual(response.status_code, 405)
         
+    @patch('diary.utils.analyze_recurring_themes')
     def test_theme_fallback_robustness(self, mock_themes):
         """
         Test de robustesse : fallback quand mistral indisponible.
         """
         # Mock qui simule un succès de fallback
-        mock_themes.return_value = [
-            ("Vol et exploration", 5),
-            ("Liberté et espace", 3)
-        ]
+        mock_themes.return_value = {
+        'top_theme': 'Formatage cohérent',
+        'percentage': 100,
+        'total_dreams': 1,
+        'message': 'Thème trouvé',
+        }
         
         # Créer des rêves pour tester le fallback
         for i in range(8):
