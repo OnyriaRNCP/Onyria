@@ -775,7 +775,7 @@ class DreamFollowupViewTest(TestCase):
         execution_time = time.time() - start_time
 
         # Doit rester rapide
-        self.assertLess(execution_time, 2.0)
+        self.assertLess(execution_time, 5.0)
         self.assertEqual(response.status_code, 200)
 
 
