@@ -117,6 +117,8 @@ class DreamDiaryViewTest(TestCase):
         'percentage': 60,
         'total_dreams': 5,
         'message': 'Thématiques trouvées',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
         }
         
         # Créer quelques rêves
@@ -288,6 +290,8 @@ class DreamDiaryViewTest(TestCase):
         'percentage': 60,
         'total_dreams': 5,
         'message': 'Thématiques trouvées',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
         }
         # Créer 50 rêves
         dreams_batch = []
@@ -467,7 +471,9 @@ class DreamFollowupViewTest(TestCase):
         },
         'has_data': True,
         'method': 'Catégories',
-        'message': 'Thèmes trouvés'
+        'message': 'Thèmes trouvés',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
         }
         
         self.client.login(email='followup@example.com', password=TEST_USER_PASSWORD)
@@ -547,7 +553,9 @@ class DreamFollowupViewTest(TestCase):
         },
         'has_data': True,
         'method': 'Catégories',
-        'message': 'Thèmes trouvés'
+        'message': 'Thèmes trouvés',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
         }
         
         self.client.login(email='followup@example.com', password=TEST_USER_PASSWORD)
@@ -600,7 +608,9 @@ class DreamFollowupViewTest(TestCase):
         },
         'has_data': True,
         'method': 'Catégories',
-        'message': 'Thèmes trouvés'
+        'message': 'Thèmes trouvés',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
         }
         self.client.login(email='followup@example.com', password=TEST_USER_PASSWORD)
 
@@ -660,7 +670,9 @@ class DreamFollowupViewTest(TestCase):
         },
         'has_data': True,
         'method': 'Catégories',
-        'message': 'Thèmes trouvés'
+        'message': 'Thèmes trouvés',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
         }
         # Créer un autre utilisateur avec des rêves
         other_user = User.objects.create_user(
@@ -704,7 +716,9 @@ class DreamFollowupViewTest(TestCase):
         },
         'has_data': True,
         'method': 'Catégories',
-        'message': 'Thèmes trouvés'
+        'message': 'Thèmes trouvés',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
         }
         """Test du contenu rendu dans le template"""
         self.client.login(email='followup@example.com', password=TEST_USER_PASSWORD)
@@ -736,7 +750,9 @@ class DreamFollowupViewTest(TestCase):
         },
         'has_data': True,
         'method': 'Catégories',
-        'message': 'Thèmes trouvés'
+        'message': 'Thèmes trouvés',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
         }
         # Créer beaucoup de rêves
         batch_dreams = []
