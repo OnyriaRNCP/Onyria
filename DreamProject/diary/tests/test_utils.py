@@ -30,7 +30,7 @@ from ..utils import (
     get_dream_type_stats_filtered,
     get_dream_type_timeline_filtered,
     get_emotions_stats_filtered,
-    get_emotions_timeline_filtered
+    get_emotions_timeline_filtered,
 )
 
 User = get_user_model()
@@ -388,8 +388,8 @@ class StatisticsAndProfilingTest(TestCase):
             username='test_stats',
             password=TEST_USER_PASSWORD,
         )
-        
-    @patch('diary.utils.analyze_themes_with_mistral')
+
+    @patch('diary.utils.analyze_recurring_themes')
     def test_get_profil_onirique_stats_no_dreams(self, mock_themes):
         """
         Test des statistiques avec aucun rêve.
@@ -397,7 +397,12 @@ class StatisticsAndProfilingTest(TestCase):
         Objectif : Vérifier la gestion du cas "utilisateur nouveau"
         """
         stats = get_profil_onirique_stats(self.user)
-        mock_themes.return_value = None
+        mock_themes.return_value = {
+            'top_theme': 'Pas encore de données',
+            'percentage': 0,
+            'total_dreams': 0,
+            'message': 'Aucun rêve enregistré',
+        }
 
         # Vérifications pour utilisateur sans rêves
         self.assertEqual(stats['statut_reveuse'], "silence onirique")
@@ -405,8 +410,8 @@ class StatisticsAndProfilingTest(TestCase):
         self.assertEqual(stats['label_reveuse'], "rêves enregistrés")
         self.assertEqual(stats['emotion_dominante'], "émotion endormie")
         self.assertEqual(stats['emotion_dominante_percentage'], 0)
-        
-    @patch('diary.utils.analyze_themes_with_mistral')
+
+    @patch('diary.utils.analyze_recurring_themes')
     def test_get_profil_onirique_stats_single_dream(self, mock_themes):
         """
         Test des statistiques avec un seul rêve.
@@ -414,7 +419,12 @@ class StatisticsAndProfilingTest(TestCase):
         Objectif : Vérifier les calculs avec données minimales
         """
         # Mock pour l'analyse thématique (même avec 1 rêve, la fonction est appelée)
-        mock_themes.return_value = None  # Pas assez de rêves pour l'analyse
+        mock_themes.return_value = {
+        'top_theme': 'Pas encore de données',
+        'percentage': 0,
+        'total_dreams': 1,
+        'message': '1 rêve enregistré',
+        }
         
         Dream.objects.create(
             user=self.user,
@@ -430,20 +440,24 @@ class StatisticsAndProfilingTest(TestCase):
         self.assertEqual(stats['label_reveuse'], 'rêves')
         self.assertEqual(stats['emotion_dominante'], 'joie')
         self.assertEqual(stats['emotion_dominante_percentage'], 100)
-        
-    @patch('diary.utils.analyze_themes_with_mistral')
-    def test_get_profil_onirique_stats_multiple_dreams_positive(self, mock_themes):
+
+    @patch('diary.utils.analyze_recurring_themes')
+    def test_get_profil_onirique_stats_multiple_dreams_positive(
+        self, mock_themes
+    ):
         """
         Test des statistiques avec plusieurs rêves positifs.
 
         Objectif : Vérifier le calcul avec profil "rêveur"
         """
         # Mock de l'analyse thématique pour éviter l'appel API
-        mock_themes.return_value = [
-            ("Vol et liberté", 3),
-            ("Nature et paysages", 2)
-        ]
-        
+        mock_themes.return_value = {
+        'top_theme': 'Vol et liberté',
+        'percentage': 75,
+        'total_dreams': 4,
+        'message': '2 thématiques trouvées',
+        }
+
         # Créer 3 rêves et 1 cauchemar
         dreams_data = [
             ("Rêve joyeux 1", "rêve", "joie"),
@@ -470,20 +484,24 @@ class StatisticsAndProfilingTest(TestCase):
         # Joie apparaît 2 fois sur 4 = 50%
         self.assertEqual(stats['emotion_dominante'], 'joie')
         self.assertEqual(stats['emotion_dominante_percentage'], 50)
-        
-    @patch('diary.utils.analyze_themes_with_mistral')
-    def test_get_profil_onirique_stats_multiple_dreams_negative(self, mock_themes):
+
+    @patch('diary.utils.analyze_recurring_themes')
+    def test_get_profil_onirique_stats_multiple_dreams_negative(
+        self, mock_themes
+    ):
         """
         Test des statistiques avec profil "cauchemardeur".
 
         Objectif : Vérifier le calcul pour un profil négatif
         """
         # Mock de l'analyse thématique
-        mock_themes.return_value = [
-            ("Peurs et angoisses", 3),
-            ("Situations stressantes", 2)
-        ]
-        
+        mock_themes.return_value = {
+        'top_theme': 'Peurs et angoisses',
+        'percentage': 75,
+        'total_dreams': 4,
+        'message': '2 thématiques trouvées',
+        }
+
         # Créer plus de cauchemars que de rêves
         dreams_data = [
             ("Cauchemar 1", "cauchemar", "peur"),
@@ -511,7 +529,7 @@ class StatisticsAndProfilingTest(TestCase):
         self.assertEqual(stats['emotion_dominante'], 'peur')
         self.assertEqual(stats['emotion_dominante_percentage'], 50)
 
-    @patch('diary.utils.analyze_themes_with_mistral')
+    @patch('diary.utils.analyze_recurring_themes')
     def test_get_profil_onirique_stats_balanced_dreams(self, mock_themes):
         """
         Test des statistiques avec rêves équilibrés.
@@ -519,11 +537,12 @@ class StatisticsAndProfilingTest(TestCase):
         Objectif : Vérifier le comportement avec égalité 50/50
         """
         # Mock de l'analyse thématique
-        mock_themes.return_value = [
-            ("Thèmes variés", 2),
-            ("Situations mixtes", 2)
-        ]
-        
+        mock_themes.return_value = {
+        'top_theme': 'Thèmes variés',
+        'percentage': 50,
+        'total_dreams': 4,
+        'message': '2 thématiques trouvées',
+        }
         # 2 rêves, 2 cauchemars
         dreams_data = [
             ("Rêve 1", "rêve", "joie"),
@@ -549,7 +568,7 @@ class StatisticsAndProfilingTest(TestCase):
         )
         self.assertEqual(stats['pourcentage_reveuse'], 50)
 
-    @patch('diary.utils.analyze_themes_with_mistral')
+    @patch('diary.utils.analyze_recurring_themes')
     def test_get_profil_onirique_stats_large_dataset(self, mock_themes):
         """
         Test des statistiques avec un grand nombre de rêves.
@@ -557,12 +576,13 @@ class StatisticsAndProfilingTest(TestCase):
         Objectif : Vérifier la performance et précision avec beaucoup de données
         """
         # Mock de l'analyse thématique
-        mock_themes.return_value = [
-            ("Thème principal", 20),
-            ("Thème secondaire", 15),
-            ("Thème tertiaire", 10)
-        ]
-        
+        mock_themes.return_value = {
+            'top_theme': 'Vol et liberté',
+            'percentage': 75,
+            'total_dreams': 4,
+            'message': 'Thématiques trouvées',
+        }
+
         # Créer 100 rêves avec distribution connue
         emotions = ["joie", "tristesse", "peur", "colère", "surprise"]
 
@@ -662,6 +682,7 @@ class ValidationAndDataFixingTest(TestCase):
         """
         result = validate_and_fix_interpretation(None)
         self.assertIsNone(result)
+
 
 class UtilityFunctionsTest(TestCase):
     """

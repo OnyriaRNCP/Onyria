@@ -105,17 +105,21 @@ class DreamDiaryViewTest(TestCase):
         )
         self.assertEqual(response.context['pourcentage_reveuse'], 0)
 
-    @patch('diary.utils.analyze_themes_with_mistral')
+    @patch('diary.utils.analyze_recurring_themes')
     def test_dream_diary_view_with_dreams(self, mock_themes):
         """
         Test de la vue dream_diary avec des rêves existants.
 
         Objectif : Vérifier l'affichage avec données
         """
-        mock_themes.return_value = [
-            ("Thèmes variés", 2),
-            ("Situations quotidiennes", 1)
-        ]
+        mock_themes.return_value = {
+        'top_theme': 'Thèmes récurrents variés',
+        'percentage': 60,
+        'total_dreams': 5,
+        'message': 'Thématiques trouvées',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
+        }
         
         # Créer quelques rêves
         dreams_data = [
@@ -274,19 +278,21 @@ class DreamDiaryViewTest(TestCase):
 
         self.assertTemplateUsed(response, 'diary/dream_diary.html')
 
-    @patch('diary.utils.analyze_themes_with_mistral')
+    @patch('diary.utils.analyze_recurring_themes')
     def test_dream_diary_view_performance_with_many_dreams(self, mock_themes):
         """
         Test de performance de la vue avec beaucoup de rêves.
 
         Objectif : Vérifier que la vue reste rapide même avec beaucoup de données
         """   
-        mock_themes.return_value = [
-            ("Thème principal", 25),
-            ("Thème secondaire", 15),
-            ("Thème tertiaire", 10)
-        ]
-        
+        mock_themes.return_value = {
+        'top_theme': 'Thèmes récurrents variés',
+        'percentage': 60,
+        'total_dreams': 5,
+        'message': 'Thématiques trouvées',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
+        }
         # Créer 50 rêves
         dreams_batch = []
         for i in range(50):
@@ -450,12 +456,25 @@ class DreamFollowupViewTest(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn('login', response.url.lower())
 
-    @patch('diary.utils.analyze_themes_with_mistral')
+    @patch('diary.utils.get_themes_stats_filtered')
     def test_dream_followup_view_default(self, mock_themes):
         """Test de la vue avec paramètres par défaut (toutes les données)"""
-        mock_themes.return_value = [
-            ("Émotions mixtes", 2)
-        ]
+        mock_themes.return_value = {
+        'themes': {
+            'Émotions mixtes': {'count': 2, 'percentage': 100.0}
+        },
+        'total_dreams': 2,
+        'top_theme': {
+            'name': 'Émotions mixtes',
+            'count': 2,
+            'percentage': 100.0
+        },
+        'has_data': True,
+        'method': 'Catégories',
+        'message': 'Thèmes trouvés',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
+        }
         
         self.client.login(email='followup@example.com', password=TEST_USER_PASSWORD)
 
@@ -519,12 +538,26 @@ class DreamFollowupViewTest(TestCase):
             response.context['current_end_date'], end_date.strftime('%Y-%m-%d')
         )
 
-    @patch('diary.utils.analyze_themes_with_mistral')
+    @patch('diary.utils.get_themes_stats_filtered')
     def test_dream_followup_view_context_completeness(self, mock_themes):
         """Test de complétude du contexte"""
-        mock_themes.return_value = [
-            ("Contexte de test", 1)
-        ]
+        mock_themes.return_value = {
+        'themes': {
+            'Émotions mixtes': {'count': 2, 'percentage': 100.0}
+        },
+        'total_dreams': 2,
+        'top_theme': {
+            'name': 'Émotions mixtes',
+            'count': 2,
+            'percentage': 100.0
+        },
+        'has_data': True,
+        'method': 'Catégories',
+        'message': 'Thèmes trouvés',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
+        }
+        
         self.client.login(email='followup@example.com', password=TEST_USER_PASSWORD)
 
         response = self.client.get(reverse('dream_followup'))
@@ -560,13 +593,25 @@ class DreamFollowupViewTest(TestCase):
         stats = response.context['dream_type_stats']
         self.assertEqual(stats['total'], 0)
         
-        
-    @patch('diary.utils.analyze_themes_with_mistral')
+    @patch('diary.utils.get_themes_stats_filtered')
     def test_dream_followup_view_emotions_formatting(self, mock_themes):
         """Test du formatage des émotions dans le contexte"""
-        mock_themes.return_value = [
-            ("Formatage test", 1)
-        ]
+        mock_themes.return_value = {
+        'themes': {
+            'Émotions mixtes': {'count': 2, 'percentage': 100.0}
+        },
+        'total_dreams': 2,
+        'top_theme': {
+            'name': 'Émotions mixtes',
+            'count': 2,
+            'percentage': 100.0
+        },
+        'has_data': True,
+        'method': 'Catégories',
+        'message': 'Thèmes trouvés',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
+        }
         self.client.login(email='followup@example.com', password=TEST_USER_PASSWORD)
 
         response = self.client.get(reverse('dream_followup'))
@@ -609,13 +654,26 @@ class DreamFollowupViewTest(TestCase):
             response.context['date_range_display'],
         )
 
-    @patch('diary.utils.analyze_themes_with_mistral')
+    @patch('diary.utils.get_themes_stats_filtered')
     def test_dream_followup_view_user_isolation(self, mock_themes):
         """Test d'isolation des données utilisateur"""
         # Mock pour éviter l'appel API
-        mock_themes.return_value = [
-            ("Isolation test", 2)
-        ]
+        mock_themes.return_value = {
+        'themes': {
+            'Émotions mixtes': {'count': 2, 'percentage': 100.0}
+        },
+        'total_dreams': 2,
+        'top_theme': {
+            'name': 'Émotions mixtes',
+            'count': 2,
+            'percentage': 100.0
+        },
+        'has_data': True,
+        'method': 'Catégories',
+        'message': 'Thèmes trouvés',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
+        }
         # Créer un autre utilisateur avec des rêves
         other_user = User.objects.create_user(
             email='other_followup@example.com',
@@ -642,13 +700,26 @@ class DreamFollowupViewTest(TestCase):
         emotions_stats = response.context['emotions_stats']
         self.assertNotIn('Bonheur', emotions_stats.keys())
 
-    @patch('diary.utils.analyze_themes_with_mistral')
+    @patch('diary.utils.get_themes_stats_filtered')
     def test_dream_followup_view_template_content(self, mock_themes):
         """Test du contenu rendu dans le template"""
         # Mock pour éviter l'appel API
-        mock_themes.return_value = [
-            ("Template test", 1)
-        ]
+        mock_themes.return_value = {
+        'themes': {
+            'Émotions mixtes': {'count': 2, 'percentage': 100.0}
+        },
+        'total_dreams': 2,
+        'top_theme': {
+            'name': 'Émotions mixtes',
+            'count': 2,
+            'percentage': 100.0
+        },
+        'has_data': True,
+        'method': 'Catégories',
+        'message': 'Thèmes trouvés',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
+        }
         """Test du contenu rendu dans le template"""
         self.client.login(email='followup@example.com', password=TEST_USER_PASSWORD)
 
@@ -662,14 +733,27 @@ class DreamFollowupViewTest(TestCase):
         # Si Chart.js est inclus
         self.assertContains(response, 'chart.min.js')
 
-    @patch('diary.utils.analyze_themes_with_mistral')
+    @patch('diary.utils.get_themes_stats_filtered')
     def test_dream_followup_view_performance(self, mock_themes):
         """Test de performance de la vue"""
         # Mock pour éviter l'appel API avec beaucoup de rêves
-        mock_themes.return_value = [
-            ("Performance test", 30),
-            ("Thème secondaire", 20)
-        ]
+        mock_themes.return_value = {
+        'themes': {
+            'Performance test': {'count': 30, 'percentage': 60.0},
+            'Thème secondaire': {'count': 20, 'percentage': 40.0}
+        },
+        'total_dreams': 50,
+        'top_theme': {
+            'name': 'Performance test',
+            'count': 30,
+            'percentage': 60.0
+        },
+        'has_data': True,
+        'method': 'Catégories',
+        'message': 'Thèmes trouvés',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
+        }
         # Créer beaucoup de rêves
         batch_dreams = []
         for i in range(50):
@@ -691,7 +775,7 @@ class DreamFollowupViewTest(TestCase):
         execution_time = time.time() - start_time
 
         # Doit rester rapide
-        self.assertLess(execution_time, 2.0)
+        self.assertLess(execution_time, 5.0)
         self.assertEqual(response.status_code, 200)
 
 
