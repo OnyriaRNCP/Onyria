@@ -186,6 +186,8 @@ class CompleteUserJourneyTest(TestCase):
         'percentage': 60,
         'total_dreams': 5,
         'message': 'Thématiques trouvées',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
         }
         self.client.login(
             email='journey@example.com', password=TEST_USER_PASSWORD
@@ -381,6 +383,8 @@ class MultiUserIsolationTest(TestCase):
         'percentage': 100,
         'total_dreams': 5,
         'message': 'Thématiques trouvées',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
         }
         
         # User1 : profil très joyeux
@@ -574,6 +578,8 @@ class DataConsistencyTest(TestCase):
         'percentage': 60,
         'total_dreams': 5,
         'message': 'Thématiques trouvées',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
         }
         # Créer des rêves avec distribution connue
         dreams_data = [
@@ -644,6 +650,8 @@ class DataConsistencyTest(TestCase):
         'percentage': 100,
         'total_dreams': 1,
         'message': 'Thème trouvé',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
         }
         # Créer un rêve avec valeurs brutes
         dream = Dream.objects.create(
@@ -706,6 +714,8 @@ class DataConsistencyTest(TestCase):
         'percentage': 75,
         'total_dreams': 4,
         'message': 'Thématiques trouvées',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
         }
         # Créer un profil cohérent avec thèmes récurrents
         dreams_data = [
@@ -893,6 +903,8 @@ class WorkflowRobustnessTest(TestCase):
         'percentage': 100,
         'total_dreams': 1,
         'message': 'Thème trouvé',
+        'themes_list': ['Émotions mixtes'],
+        'raw_themes_results': [('émotions mixtes', 2)],
         }
         
         # Créer des rêves pour tester le fallback
