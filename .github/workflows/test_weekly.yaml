@@ -21,7 +21,7 @@ jobs:
   weekly-tests:
     name: "Tests Hebdomadaires Complets"
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
         image: postgres:15
@@ -33,23 +33,23 @@ jobs:
         options: >-
           --health-cmd="pg_isready -U postgres -d onyria_test"
           --health-interval=5s --health-timeout=5s --health-retries=10
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
-      
+
       - name: Install all dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install coverage coverage-badge bandit safety tblib
-      
+
       - name: Wait for Postgres
         run: |
           echo "Attente de Postgres..."
@@ -61,21 +61,21 @@ jobs:
             echo "Tentative $i/30..."
             sleep 2
           done
-      
+
       - name: Security Audit - Bandit
         continue-on-error: true
         run: |
           echo "Audit sécurité avec Bandit..."
           bandit -r DreamProject/accounts/ DreamProject/diary/ -f json -o bandit-report.json || true
           bandit -r DreamProject/accounts/ DreamProject/diary/ -f txt
-      
+
       - name: Security Audit - Safety
         continue-on-error: true
         run: |
           echo "Vérification des dépendances avec Safety..."
           safety check --json --output safety-report.json || true
           safety check
-      
+
       - name: Run All Tests with Coverage
         working-directory: DreamProject
         run: |
@@ -85,14 +85,14 @@ jobs:
             --omit='*/migrations/*,*/tests/*,*/__init__.py,*/apps.py,*/urls.py,*/constants.py,*/admin.py,*/settings/*,*/manage.py,*/wsgi.py,*/asgi.py' \
             --branch \
             manage.py test accounts.tests diary.tests --verbosity=2
-          
+
           echo "Génération des rapports..."
           coverage report --show-missing --skip-covered --sort=cover
           coverage html --skip-covered --title="Dream Journal Coverage Report"
           coverage xml
           coverage json
           coverage-badge -f -o coverage.svg
-          
+
           echo "Analyse détaillée..."
           coverage report --show-missing | grep -E "(models|views|utils|forms)\.py" || true
 
@@ -100,21 +100,31 @@ jobs:
         working-directory: DreamProject
         run: |
           echo "Vérification qualité coverage..."
-          
+
           # Extraire le pourcentage total
           COVERAGE=$(coverage report | tail -1 | grep -oE '[0-9]+%' | head -1 | sed 's/%//')
           echo "Coverage total: ${COVERAGE}%"
-          
+
           # Définir seuils réalistes par type de fichier
           echo "Vérification par composant:"
           coverage report --show-missing | grep "models.py" | while read line; do
             echo "Models: $line"
           done
-          
+
           coverage report --show-missing | grep "views.py" | while read line; do
             echo "Views: $line"
           done
-          
+
           coverage report --show-missing | grep "utils.py" | while read line; do
             echo "Utils: $line"
           done
+
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            DreamProject/htmlcov/
+            DreamProject/coverage.xml
+            DreamProject/coverage.svg
+          retention-days: 30
