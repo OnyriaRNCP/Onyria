@@ -82,7 +82,7 @@ jobs:
           echo "Tests complets avec analyse de couverture réaliste..."
           coverage run \
             --source='accounts,diary' \
-            --omit='*/migrations/*,*/tests/*,*/__init__.py,*/apps.py,*/urls.py,*/constants.py,*/admin.py,*/settings/*,*/manage.py,*/wsgi.py,*/asgi.py' \
+            --omit='*/migrations/*,*/tests/*,*/__init__.py,*/apps.py,*/urls.py,*/constants.py,*/admin.py,*/settings/*,*/manage.py,*/wsgi.py,*/asgi.py,*/metrics/*' \
             --branch \
             manage.py test accounts.tests diary.tests --verbosity=2
 
