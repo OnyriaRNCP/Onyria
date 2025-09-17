@@ -9,8 +9,8 @@ CustomUser = get_user_model()
 class CustomUserAdmin(UserAdmin):
     """
     Enregistre le CustomUser dans l'admin.
-    Ton modèle hérite d'AbstractUser mais utilise l'email comme identifiant (USERNAME_FIELD='email').
-    On garde le UserAdmin standard et on ajoute tes champs perso.
+    Le modèle hérite d'AbstractUser mais utilise l'email comme identifiant (USERNAME_FIELD='email').
+    On garde le UserAdmin standard et on ajoute les champs perso.
     """
 
     # Liste dans /admin/accounts/customuser/
