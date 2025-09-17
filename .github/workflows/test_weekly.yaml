@@ -80,7 +80,7 @@ jobs:
         working-directory: DreamProject
         run: |
           echo "Tests complets avec analyse de couverture..."
-          coverage run --source='account, diary' --omit='*/migrations/*,*/tests/*' manage.py test accounts.tests diary.tests --verbosity=2
+          coverage run --source='accounts,diary' --omit='*/migrations/*,*/tests/*,*/metrics/*' manage.py test accounts.tests diary.tests --verbosity=2
           coverage report --show-missing
           coverage html
           coverage xml
