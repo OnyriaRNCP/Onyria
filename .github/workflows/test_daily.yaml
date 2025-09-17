@@ -43,6 +43,42 @@ jobs:
           pip install -r requirements.txt
           pip install coverage flake8 black tblib
 
+      - name: Run Forms tests (Accounts)
+        working-directory: DreamProject
+        run: |
+          echo "Tests formulaires accounts..."
+          python manage.py test accounts.tests.test_forms --verbosity=2
+
+      - name: Run Models tests (Accounts)
+        working-directory: DreamProject
+        run: |
+          echo "Tests modèles accounts..."
+          python manage.py test accounts.tests.test_models --verbosity=2
+
+      - name: Run Security tests (Accounts)
+        working-directory: DreamProject
+        run: |
+          echo "Tests sécurité accounts..."
+          python manage.py test accounts.tests.test_security --verbosity=2
+
+      - name: Run Models tests
+        working-directory: DreamProject
+        run: |
+          echo "Tests des modèles Django..."
+          python manage.py test diary.tests.test_models --verbosity=2
+
+      - name: Run Utils tests
+        working-directory: DreamProject
+        run: |
+          echo "Tests des utilitaires..."
+          python manage.py test diary.tests.test_utils --verbosity=2
+
+      - name: Run Views tests
+        working-directory: DreamProject
+        run: |
+          echo "Tests des vues Django..."
+          python manage.py test diary.tests.test_views --verbosity=2
+
       - name: Run AI tests (Extended only)
         working-directory: DreamProject
         if: github.event.inputs.test_level == 'extended' || github.event_name == 'schedule'
@@ -63,21 +99,6 @@ jobs:
           echo "Statistiques générales..."
           flake8 DreamProject/diary/ --count --exit-zero --max-complexity=10 --statistics
 
-      - name: Run coverage analysis
-        working-directory: DreamProject
-        run: |
-          echo "Analyse de couverture..."
-          coverage run --source='diary' manage.py test accounts.tests.test_models accounts.tests.test_forms accounts.tests.test_security diary.tests.test_models diary.tests.test_utils diary.tests.test_views
-          coverage report --show-missing
-          coverage html
-
-      - name: Upload coverage reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: DreamProject/COVERAGE/
-      
       - name: Test Summary
         if: always()
         run: |
