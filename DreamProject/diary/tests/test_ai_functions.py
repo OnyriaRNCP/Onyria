@@ -484,14 +484,7 @@ class DreamInterpretationTest(TestCase):
         result = interpret_dream("Rêve format mixte")
         # on renvoie None → message générique côté UI
         self.assertIsNone(result)
-        self.assertIsInstance(result, dict)
-
-        expected_keys = ["Émotionnelle", "Symbolique", "Cognitivo-scientifique", "Freudien"]
-        for key in expected_keys:
-            self.assertIn(key, result)
-            self.assertIsInstance(result[key], str)
-            self.assertGreater(len(result[key]), 0)
-
+    
     @patch('diary.utils.safe_mistral_call')
     @patch('diary.utils.read_file')
     def test_interpret_dream_invalid_json(self, mock_read_file, mock_safe_mistral_call):
