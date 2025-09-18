@@ -28,15 +28,6 @@ ignore =
     E265,
     # E266: too many leading '#' for block comment
     E266,
-    C901,
-    E401, 
-    W293,
-    W291,
-    F811, 
-    F541, 
-    F403, 
-    E731, 
-    E402
 
 # Dossiers à exclure
 exclude = 
