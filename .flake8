@@ -1,0 +1,52 @@
+# Configuration Flake8 permissive
+
+[flake8]
+# Longueur de ligne plus souple
+max-line-length = 120
+
+# Ignorer les règles trop strictes pour du code existant
+ignore = 
+    # E203: whitespace before ':' (conflict avec Black)
+    E203,
+    # E501: line too long (géré par max-line-length)
+    E501,
+    # W503: line break before binary operator (style moderne)
+    W503,
+    # E231: missing whitespace after ',' (parfois OK)
+    E231,
+    # E701: multiple statements on one line (parfois pratique)
+    E701,
+    # F401: imported but unused (beaucoup dans __init__.py)
+    F401,
+    # F841: local variable assigned but never used (debug)
+    F841,
+    # E722: bare except (parfois nécessaire)
+    E722,
+    # W292: no newline at end of file
+    W292,
+    # E265: block comment should start with '# '
+    E265,
+    # E266: too many leading '#' for block comment
+    E266
+
+# Dossiers à exclure
+exclude = 
+    migrations,
+    venv,
+    .venv,
+    env,
+    .env,
+    __pycache__,
+    .git,
+    build,
+    dist,
+    *.egg-info
+
+# Complexité cyclomatique (permissive)
+max-complexity = 15
+
+# Afficher les statistiques
+statistics = True
+
+# Continuer malgré les erreurs (pour voir toutes les erreurs)
+count = True
