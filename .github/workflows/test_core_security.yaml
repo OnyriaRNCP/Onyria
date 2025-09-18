@@ -30,6 +30,11 @@ jobs:
       - name: Format code with Black
         run: black .
 
+      - name: Lint code with Flake8
+        run: |
+          # Vérifie que le code respecte PEP8 et qu'il n'y a pas d'erreurs
+          flake8 . --max-line-length=88 --statistics --count
+
       - name: Run core tests (accounts)
         working-directory: DreamProject
         run: |
