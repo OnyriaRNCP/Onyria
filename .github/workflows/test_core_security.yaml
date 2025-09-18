@@ -34,7 +34,7 @@ jobs:
       - name: Lint code with Flake8
         run: |
           # Vérifie que le code respecte PEP8 et qu'il n'y a pas d'erreurs
-          flake8 . --max-line-length=88 --statistics --count
+          flake8 .
 
       - name: Run core tests (accounts)
         working-directory: DreamProject
