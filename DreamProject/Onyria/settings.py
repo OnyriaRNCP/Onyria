@@ -135,6 +135,11 @@ AI_CONFIG = {
         "503",
         "502",
         "429",
+    ],
+    'TRANSCRIBE_MAX_RETRIES': 3,
+    'FALLBACK_STATUS': [
+        'quota_exceeded', 'insufficient_quota', 'rate_limit', 
+        'model_not_found', 'service_unavailable', 'timeout'
     ]
 }
 

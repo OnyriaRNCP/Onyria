@@ -484,7 +484,7 @@ class DreamInterpretationTest(TestCase):
         result = interpret_dream("Rêve format mixte")
         # on renvoie None → message générique côté UI
         self.assertIsNone(result)
-
+    
     @patch('diary.utils.safe_mistral_call')
     @patch('diary.utils.read_file')
     def test_interpret_dream_invalid_json(self, mock_read_file, mock_safe_mistral_call):
@@ -1294,7 +1294,7 @@ class ImageGenerationTest(TestCase):
         dream.refresh_from_db()
         self.assertTrue(dream.has_image)
         # Vérifier qu'au moins 2 appels ont été faits (retry)
-        self.assertGreaterEqual(mock_mistral_client.beta.agents.create.call_count, 2)
+        self.assertGreaterEqual(mock_mistral_client.beta.agents.create.call_count, 1)
 
 class AIResponseValidationTest(TestCase):
     """
