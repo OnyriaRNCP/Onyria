@@ -26,9 +26,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install black
+          pip install flake8
 
       - name: Format code with Black
         run: black .
+
+      - name: Lint code with Flake8
+        run: |
+          flake8 . \
+            --max-line-length=120 \
+            --ignore=E203,E501,W503,E231,E701,F401,F841,E722,W292,E265,E266,C901,E401,W293,W291,F811,F541,F403,E731,E402 \
+            --exclude=migrations,venv,.venv,env,.env,__pycache__,.git \
+            --max-complexity=15 \
+            --statistics
 
       - name: Run core tests (accounts)
         working-directory: DreamProject
