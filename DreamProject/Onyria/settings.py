@@ -75,6 +75,7 @@ AI_CONFIG = {
         'open-mistral-7b': [],
     },
 
+    #Codes erreur à relever
     'ERROR_REASON_KEYWORDS': {
         "quota": ["insufficient_quota", "quota_exceeded", "quota"],
         "rate_limit": ["rate_limit", "too many requests", "429"],
@@ -87,7 +88,7 @@ AI_CONFIG = {
         "not_found": ["not found", "404"],
     },
 
-    # CODES ERREUR pour l'analyse Mistral
+    # CODES ERREUR OK pour fallback/retry - analyse Mistral
     'ANALYZE_ERROR_STATUS': [408, 429, 500, 502, 503, 504],
 
     # RÈGLES DE FALLBACK pour l'analyse Mistral
@@ -106,7 +107,7 @@ AI_CONFIG = {
     'FALLBACK_BASE_DELAY_S': 0.5,   # backoff avant modèle suivant
     'FALLBACK_MAX_DELAY_S': 3.0,
 
- # RÈGLES DE RETRY pour l'analyse Mistral
+    # RÈGLES DE RETRY pour l'analyse Mistral
     'ANALYZE_RETRY_KEYWORDS': [
         "too many requests",      
         "rate_limit",             
