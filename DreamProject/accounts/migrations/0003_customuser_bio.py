@@ -6,13 +6,19 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0002_customuser_profile_picture'),
+        ("accounts", "0002_customuser_profile_picture"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='customuser',
-            name='bio',
-            field=models.CharField(blank=True, default='', help_text='Une courte phrase (max 180 caractères).', max_length=180, verbose_name='Bio'),
+            model_name="customuser",
+            name="bio",
+            field=models.CharField(
+                blank=True,
+                default="",
+                help_text="Une courte phrase (max 180 caractères).",
+                max_length=180,
+                verbose_name="Bio",
+            ),
         ),
     ]

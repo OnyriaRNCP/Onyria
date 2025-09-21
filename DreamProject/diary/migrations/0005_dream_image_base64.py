@@ -6,13 +6,18 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('diary', '0004_remove_dream_image_prompt'),
+        ("diary", "0004_remove_dream_image_prompt"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='dream',
-            name='image_base64',
-            field=models.TextField(blank=True, help_text='Image générée à partir du rêve encodée en base64', null=True, verbose_name='Image du rêve (base64)'),
+            model_name="dream",
+            name="image_base64",
+            field=models.TextField(
+                blank=True,
+                help_text="Image générée à partir du rêve encodée en base64",
+                null=True,
+                verbose_name="Image du rêve (base64)",
+            ),
         ),
     ]

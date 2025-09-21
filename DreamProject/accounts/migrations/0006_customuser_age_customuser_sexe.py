@@ -6,18 +6,35 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0005_remove_customuser_profile_picture'),
+        ("accounts", "0005_remove_customuser_profile_picture"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='customuser',
-            name='age',
-            field=models.PositiveIntegerField(blank=True, help_text='Votre âge', null=True, verbose_name='Âge'),
+            model_name="customuser",
+            name="age",
+            field=models.PositiveIntegerField(
+                blank=True,
+                help_text="Votre âge",
+                null=True,
+                verbose_name="Âge",
+            ),
         ),
         migrations.AddField(
-            model_name='customuser',
-            name='sexe',
-            field=models.CharField(blank=True, choices=[('M', 'Homme'), ('F', 'Femme'), ('O', 'Autre'), ('N', 'Préfère ne pas dire')], help_text='Votre sexe', max_length=1, null=True, verbose_name='Sexe'),
+            model_name="customuser",
+            name="sexe",
+            field=models.CharField(
+                blank=True,
+                choices=[
+                    ("M", "Homme"),
+                    ("F", "Femme"),
+                    ("O", "Autre"),
+                    ("N", "Préfère ne pas dire"),
+                ],
+                help_text="Votre sexe",
+                max_length=1,
+                null=True,
+                verbose_name="Sexe",
+            ),
         ),
     ]

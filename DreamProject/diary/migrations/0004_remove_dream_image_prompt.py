@@ -6,12 +6,12 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('diary', '0003_remove_dream_image_base64_dream_image'),
+        ("diary", "0003_remove_dream_image_base64_dream_image"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='dream',
-            name='image_prompt',
+            model_name="dream",
+            name="image_prompt",
         ),
     ]
