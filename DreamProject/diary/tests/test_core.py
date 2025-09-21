@@ -20,13 +20,17 @@ import os
 import logging
 
 from ..models import Dream
-from ..utils import softmax, get_profil_onirique_stats, analyze_recurring_themes
+from ..utils import (
+    softmax,
+    get_profil_onirique_stats,
+    analyze_recurring_themes,
+)
 
 User = get_user_model()
 
 logger = logging.getLogger(__name__)
 
-TEST_USER_PASSWORD = os.environ.get('TEST_PASSWORD', 'django_test_secure_2024')
+TEST_USER_PASSWORD = os.environ.get("TEST_PASSWORD", "django_test_secure_2024")
 
 
 # === Utilitaire local pour lire les événements SSE ===
@@ -71,8 +75,8 @@ class CoreModelTest(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            email='core@example.com',
-            username='coreuser',
+            email="core@example.com",
+            username="coreuser",
             password=TEST_USER_PASSWORD,
         )
 
@@ -91,7 +95,7 @@ class CoreModelTest(TestCase):
             dream.transcription, "Test critique de création de rêve"
         )
         self.assertIsNotNone(dream.date)
-        self.assertEqual(dream.dream_type, 'rêve')  # Valeur par défaut
+        self.assertEqual(dream.dream_type, "rêve")  # Valeur par défaut
         self.assertFalse(dream.is_analyzed)
 
     def test_emotions_property_core(self):
@@ -202,8 +206,8 @@ class CoreUtilsTest(TestCase):
         """
         # Cas de base : aucun rêve
         stats = get_profil_onirique_stats(self.user)
-        self.assertEqual(stats['statut_reveuse'], "silence onirique")
-        self.assertEqual(stats['pourcentage_reveuse'], 0)
+        self.assertEqual(stats["statut_reveuse"], "silence onirique")
+        self.assertEqual(stats["pourcentage_reveuse"], 0)
 
         # Cas avec un rêve
         Dream.objects.create(
@@ -214,17 +218,17 @@ class CoreUtilsTest(TestCase):
         )
 
         stats = get_profil_onirique_stats(self.user)
-        self.assertEqual(stats['statut_reveuse'], 'âme rêveuse')
-        self.assertEqual(stats['pourcentage_reveuse'], 100)
-        self.assertEqual(stats['emotion_dominante'], 'joie')
-        self.assertIn('thematique_recurrente', stats)
-        self.assertIn('thematique_percentage', stats)
-        self.assertIsInstance(stats['thematique_recurrente'], str)
+        self.assertEqual(stats["statut_reveuse"], "âme rêveuse")
+        self.assertEqual(stats["pourcentage_reveuse"], 100)
+        self.assertEqual(stats["emotion_dominante"], "joie")
+        self.assertIn("thematique_recurrente", stats)
+        self.assertIn("thematique_percentage", stats)
+        self.assertIsInstance(stats["thematique_recurrente"], str)
 
     def setUp(self):
         self.user = User.objects.create_user(
-            email='core_utils@example.com',
-            username='coreutils',
+            email="core_utils@example.com",
+            username="coreutils",
             password=TEST_USER_PASSWORD,
         )
 
@@ -239,8 +243,8 @@ class CoreViewsTest(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            email='core_views@example.com',
-            username='coreviewsuser',
+            email="core_views@example.com",
+            username="coreviewsuser",
             password=TEST_USER_PASSWORD,
         )
         self.client = Client()
@@ -252,10 +256,10 @@ class CoreViewsTest(TestCase):
         Si ce test échoue, l'utilisateur ne peut pas accéder à l'app.
         """
         self.client.login(
-            email='core_views@example.com', password=TEST_USER_PASSWORD
+            email="core_views@example.com", password=TEST_USER_PASSWORD
         )
 
-        response = self.client.get(reverse('dream_diary'))
+        response = self.client.get(reverse("dream_diary"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, self.user.username)
@@ -267,10 +271,10 @@ class CoreViewsTest(TestCase):
         C'est la fonctionnalité principale de l'app.
         """
         self.client.login(
-            email='core_views@example.com', password=TEST_USER_PASSWORD
+            email="core_views@example.com", password=TEST_USER_PASSWORD
         )
 
-        response = self.client.get(reverse('dream_recorder'))
+        response = self.client.get(reverse("dream_recorder"))
 
         self.assertEqual(response.status_code, 200)
 
@@ -281,10 +285,10 @@ class CoreViewsTest(TestCase):
         Sécurité de base de l'application.
         """
         # Sans authentification
-        response = self.client.get(reverse('dream_diary'))
+        response = self.client.get(reverse("dream_diary"))
         self.assertEqual(response.status_code, 302)  # Redirection vers login
 
-        response = self.client.get(reverse('dream_recorder'))
+        response = self.client.get(reverse("dream_recorder"))
         self.assertEqual(response.status_code, 302)
 
     def test_data_isolation_core(self):
@@ -295,8 +299,8 @@ class CoreViewsTest(TestCase):
         """
         # Créer un second utilisateur
         user2 = User.objects.create_user(
-            email='user2@example.com',
-            username='user2',
+            email="user2@example.com",
+            username="user2",
             password=TEST_USER_PASSWORD,
         )
 
@@ -306,11 +310,11 @@ class CoreViewsTest(TestCase):
 
         # Connexion user 1
         self.client.login(
-            email='core_views@example.com', password=TEST_USER_PASSWORD
+            email="core_views@example.com", password=TEST_USER_PASSWORD
         )
-        response = self.client.get(reverse('dream_diary'))
+        response = self.client.get(reverse("dream_diary"))
 
-        dreams = response.context['dreams']
+        dreams = response.context["dreams"]
         self.assertEqual(len(dreams), 1)
         self.assertEqual(dreams[0].transcription, "Rêve user 1")
 
@@ -325,17 +329,17 @@ class CoreWorkflowTest(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            email='core_workflow@example.com',
-            username='coreworkflow',
+            email="core_workflow@example.com",
+            username="coreworkflow",
             password=TEST_USER_PASSWORD,
         )
         self.client = Client()
 
-    @patch('diary.views.transcribe_audio')
-    @patch('diary.views.analyze_emotions')
-    @patch('diary.views.classify_dream')
-    @patch('diary.views.interpret_dream')
-    @patch('diary.views.generate_image_from_text')
+    @patch("diary.views.transcribe_audio")
+    @patch("diary.views.analyze_emotions")
+    @patch("diary.views.classify_dream")
+    @patch("diary.views.interpret_dream")
+    @patch("diary.views.generate_image_from_text")
     def test_complete_analysis_workflow_core(
         self,
         mock_generate,
@@ -353,66 +357,66 @@ class CoreWorkflowTest(TestCase):
         # Configuration des mocks
         mock_transcribe.return_value = "J'ai rêvé d'un oiseau bleu"
         mock_analyze.return_value = (
-            {'joie': 0.8, 'surprise': 0.2},
-            ('joie', 0.8),
+            {"joie": 0.8, "surprise": 0.2},
+            ("joie", 0.8),
         )
-        mock_classify.return_value = 'rêve'
+        mock_classify.return_value = "rêve"
         mock_interpret.return_value = {
-            'Émotionnelle': 'Rêve joyeux',
-            'Symbolique': 'Oiseau = liberté',
-            'Cognitivo-scientifique': 'Consolidation positive',
-            'Freudien': 'Désir de liberté',
+            "Émotionnelle": "Rêve joyeux",
+            "Symbolique": "Oiseau = liberté",
+            "Cognitivo-scientifique": "Consolidation positive",
+            "Freudien": "Désir de liberté",
         }
         mock_generate.return_value = True
 
         # Connexion et test
         self.client.login(
-            email='core_workflow@example.com', password=TEST_USER_PASSWORD
+            email="core_workflow@example.com", password=TEST_USER_PASSWORD
         )
 
-        with tempfile.NamedTemporaryFile(suffix='.wav') as audio_file:
-            audio_file.write(b'fake_audio_data')
+        with tempfile.NamedTemporaryFile(suffix=".wav") as audio_file:
+            audio_file.write(b"fake_audio_data")
             audio_file.seek(0)
 
             response = self.client.post(
-                reverse('analyse_from_voice'), {'audio': audio_file}
+                reverse("analyse_from_voice"), {"audio": audio_file}
             )
 
         # Vérifications: réponse SSE
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response['Content-Type'], 'text/event-stream')
+        self.assertEqual(response["Content-Type"], "text/event-stream")
 
         # Consommer le flux SSE
         events = _collect_sse_events(response)
 
         # On doit avoir au moins: transcription -> emotions -> image -> interpretation -> complete
-        steps = [e.get('step') for e in events]
-        self.assertIn('transcription', steps)
-        self.assertIn('emotions', steps)
-        self.assertIn('interpretation', steps)
-        self.assertIn('complete', steps)
+        steps = [e.get("step") for e in events]
+        self.assertIn("transcription", steps)
+        self.assertIn("emotions", steps)
+        self.assertIn("interpretation", steps)
+        self.assertIn("complete", steps)
 
         # Vérif contenu de transcription
-        trans_evt = next(e for e in events if e.get('step') == 'transcription')
-        self.assertIn('transcription', trans_evt['data'])
+        trans_evt = next(e for e in events if e.get("step") == "transcription")
+        self.assertIn("transcription", trans_evt["data"])
         self.assertEqual(
-            trans_evt['data']['transcription'], "J'ai rêvé d'un oiseau bleu"
+            trans_evt["data"]["transcription"], "J'ai rêvé d'un oiseau bleu"
         )
 
         # Vérif contenu d'émotions (formaté côté vue)
-        emo_evt = next(e for e in events if e.get('step') == 'emotions')
-        self.assertIn('dominant_emotion', emo_evt['data'])
-        self.assertIn('dream_type', emo_evt['data'])
+        emo_evt = next(e for e in events if e.get("step") == "emotions")
+        self.assertIn("dominant_emotion", emo_evt["data"])
+        self.assertIn("dream_type", emo_evt["data"])
         # La vue renvoie une **chaîne** pour l'émotion formatée, pas une liste
-        self.assertEqual(emo_evt['data']['dominant_emotion'], 'Joie')
-        self.assertEqual(emo_evt['data']['dream_type'], 'Rêve')
+        self.assertEqual(emo_evt["data"]["dominant_emotion"], "Joie")
+        self.assertEqual(emo_evt["data"]["dream_type"], "Rêve")
 
         # Vérif interprétation (dict validé)
         interp_evt = next(
-            e for e in events if e.get('step') == 'interpretation'
+            e for e in events if e.get("step") == "interpretation"
         )
-        self.assertIn('interpretation', interp_evt['data'])
-        self.assertIsInstance(interp_evt['data']['interpretation'], dict)
+        self.assertIn("interpretation", interp_evt["data"])
+        self.assertIsInstance(interp_evt["data"]["interpretation"], dict)
 
         # Vérifier qu'un rêve a été créé et marqué analysé
         dream = Dream.objects.get(user=self.user)
@@ -425,26 +429,26 @@ class CoreWorkflowTest(TestCase):
 
         L'application doit gérer gracieusement les erreurs d'IA.
         """
-        with patch('diary.views.transcribe_audio', return_value=None):
+        with patch("diary.views.transcribe_audio", return_value=None):
             self.client.login(
-                email='core_workflow@example.com', password=TEST_USER_PASSWORD
+                email="core_workflow@example.com", password=TEST_USER_PASSWORD
             )
 
-            with tempfile.NamedTemporaryFile(suffix='.wav') as audio_file:
-                audio_file.write(b'fake_audio_data')
+            with tempfile.NamedTemporaryFile(suffix=".wav") as audio_file:
+                audio_file.write(b"fake_audio_data")
                 audio_file.seek(0)
 
                 response = self.client.post(
-                    reverse('analyse_from_voice'), {'audio': audio_file}
+                    reverse("analyse_from_voice"), {"audio": audio_file}
                 )
 
             # C'est un flux SSE qui doit contenir un event 'error'
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(response['Content-Type'], 'text/event-stream')
+            self.assertEqual(response["Content-Type"], "text/event-stream")
 
             events = _collect_sse_events(response)
-            steps = [e.get('step') for e in events]
-            self.assertIn('error', steps)
+            steps = [e.get("step") for e in events]
+            self.assertIn("error", steps)
 
             # Aucun rêve ne doit être créé
             self.assertEqual(Dream.objects.filter(user=self.user).count(), 0)
@@ -460,8 +464,8 @@ class CoreErrorHandlingTest(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            email='core_errors@example.com',
-            username='coreerrors',
+            email="core_errors@example.com",
+            username="coreerrors",
             password=TEST_USER_PASSWORD,
         )
 
@@ -517,7 +521,7 @@ class CoreErrorHandlingTest(TestCase):
         # Stats avec aucun rêve
         stats = get_profil_onirique_stats(self.user)
         self.assertIsInstance(stats, dict)
-        self.assertIn('statut_reveuse', stats)
+        self.assertIn("statut_reveuse", stats)
 
         # Rêve avec transcription vide
         dream = Dream.objects.create(user=self.user, transcription="")
@@ -543,7 +547,7 @@ class CoreLabelTest(TestCase):
         """
         from ..constants import EMOTION_LABELS
 
-        essential_emotions = ['heureux', 'triste', 'apeure', 'en_colere']
+        essential_emotions = ["heureux", "triste", "apeure", "en_colere"]
 
         for emotion in essential_emotions:
             self.assertIn(emotion, EMOTION_LABELS)
@@ -559,11 +563,11 @@ class CoreLabelTest(TestCase):
         """
         from ..constants import DREAM_TYPE_LABELS
 
-        self.assertIn('rêve', DREAM_TYPE_LABELS)
-        self.assertIn('cauchemar', DREAM_TYPE_LABELS)
+        self.assertIn("rêve", DREAM_TYPE_LABELS)
+        self.assertIn("cauchemar", DREAM_TYPE_LABELS)
 
-        self.assertEqual(DREAM_TYPE_LABELS['rêve'], 'Rêve')
-        self.assertEqual(DREAM_TYPE_LABELS['cauchemar'], 'Cauchemar')
+        self.assertEqual(DREAM_TYPE_LABELS["rêve"], "Rêve")
+        self.assertEqual(DREAM_TYPE_LABELS["cauchemar"], "Cauchemar")
 
 
 # Test de sanité général
@@ -610,12 +614,12 @@ class CoreSanityTest(TestCase):
         Test de base : Modèle utilisateur fonctionne.
         """
         user = User.objects.create_user(
-            email='sanity@example.com',
-            username='sanityuser',
+            email="sanity@example.com",
+            username="sanityuser",
             password=TEST_USER_PASSWORD,
         )
 
-        self.assertEqual(user.email, 'sanity@example.com')
+        self.assertEqual(user.email, "sanity@example.com")
         self.assertTrue(user.check_password(TEST_USER_PASSWORD))
 
 

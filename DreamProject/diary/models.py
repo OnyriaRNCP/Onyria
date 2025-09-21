@@ -1,13 +1,21 @@
-from django.db import models
-from django.conf import settings
+    """_summary_
+
+    Returns:
+        _type_: _description_
+    """
 import json
 import base64
+from django.db import models
+from django.conf import settings
 
 
 class Dream(models.Model):
+    """
+    Schema de la table de reves
+    """
     DREAM_TYPES = [
-        ('rêve', 'Rêve'),
-        ('cauchemar', 'Cauchemar'),
+        ("rêve", "Rêve"),
+        ("cauchemar", "Cauchemar"),
     ]
 
     # Informations de base
@@ -15,7 +23,7 @@ class Dream(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE
     )
     transcription = models.TextField(verbose_name="Transcription du rêve")
-    date = models.DateTimeField('Date du rêve enregistré', auto_now_add=True)
+    date = models.DateTimeField("Date du rêve enregistré", auto_now_add=True)
 
     # Analyse émotionnelle
     emotions_json = models.TextField(
@@ -30,7 +38,7 @@ class Dream(models.Model):
     dream_type = models.CharField(
         max_length=10,
         choices=DREAM_TYPES,
-        default='rêve',
+        default="rêve",
         verbose_name="Type de rêve",
     )
 
@@ -39,7 +47,7 @@ class Dream(models.Model):
         blank=True,
         null=True,
         verbose_name="Image du rêve (base64)",
-        help_text="Image générée à partir du rêve encodée en base64"
+        help_text="Image générée à partir du rêve encodée en base64",
     )
     interpretation_json = models.TextField(
         blank=True,
@@ -58,7 +66,7 @@ class Dream(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-date']
+        ordering = ["-date"]
         verbose_name = "Rêve"
         verbose_name_plural = "Rêves"
 
@@ -101,12 +109,12 @@ class Dream(models.Model):
         else:
             self.interpretation_json = None
 
-    def set_image_from_bytes(self, image_bytes, format='PNG'):
+    def set_image_from_bytes(self, image_bytes, format="PNG"):
         """Encode une image en base64 et la stocke"""
         if image_bytes:
-            base64_string = base64.b64encode(image_bytes).decode('utf-8')
+            base64_string = base64.b64encode(image_bytes).decode("utf-8")
             mime_type = f"image/{format.lower()}"
-            if format.upper() == 'JPG':
+            if format.upper() == "JPG":
                 mime_type = "image/jpeg"
             self.image_base64 = f"data:{mime_type};base64,{base64_string}"
 

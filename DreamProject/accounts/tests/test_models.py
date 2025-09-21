@@ -21,7 +21,7 @@ import os
 
 User = get_user_model()
 
-TEST_USER_PASSWORD = os.environ.get('TEST_PASSWORD', 'django_test_secure_2024')
+TEST_USER_PASSWORD = os.environ.get("TEST_PASSWORD", "django_test_secure_2024")
 
 
 class CustomUserModelTest(TestCase):
@@ -42,14 +42,14 @@ class CustomUserModelTest(TestCase):
         Objectif : Vérifier que la création minimale fonctionne
         """
         user = User.objects.create_user(
-            email='minimal@example.com',
-            username='minimal',
-            password=TEST_USER_PASSWORD
+            email="minimal@example.com",
+            username="minimal",
+            password=TEST_USER_PASSWORD,
         )
 
         # Vérifications de base
-        self.assertEqual(user.email, 'minimal@example.com')
-        self.assertEqual(user.username, 'minimal')
+        self.assertEqual(user.email, "minimal@example.com")
+        self.assertEqual(user.username, "minimal")
         self.assertTrue(user.check_password(TEST_USER_PASSWORD))
         self.assertTrue(user.is_active)
         self.assertFalse(user.is_staff)
@@ -58,7 +58,7 @@ class CustomUserModelTest(TestCase):
         # Champs optionnels doivent être None/vides
         self.assertIsNone(user.date_of_birth)
         self.assertEqual(user.sexe, None)
-        self.assertEqual(user.bio, '')
+        self.assertEqual(user.bio, "")
         self.assertIsNone(user.profile_picture_base64)
 
     def test_create_user_complete(self):
@@ -68,20 +68,20 @@ class CustomUserModelTest(TestCase):
         Objectif : Vérifier que tous les champs peuvent être définis
         """
         birth_date = date(1990, 5, 15)
-        
+
         user = User.objects.create_user(
-            email='complete@example.com',
-            username='complete',
+            email="complete@example.com",
+            username="complete",
             password=TEST_USER_PASSWORD,
             date_of_birth=birth_date,
-            sexe='F',
-            bio='Une bio de test complète pour validation'
+            sexe="F",
+            bio="Une bio de test complète pour validation",
         )
 
         # Vérifications
         self.assertEqual(user.date_of_birth, birth_date)
-        self.assertEqual(user.sexe, 'F')
-        self.assertEqual(user.bio, 'Une bio de test complète pour validation')
+        self.assertEqual(user.sexe, "F")
+        self.assertEqual(user.bio, "Une bio de test complète pour validation")
 
     def test_create_superuser(self):
         """
@@ -90,9 +90,9 @@ class CustomUserModelTest(TestCase):
         Objectif : Vérifier que les superusers peuvent être créés
         """
         superuser = User.objects.create_superuser(
-            email='admin@example.com',
-            username='admin',
-            password=TEST_USER_PASSWORD
+            email="admin@example.com",
+            username="admin",
+            password=TEST_USER_PASSWORD,
         )
 
         self.assertTrue(superuser.is_staff)
@@ -107,17 +107,17 @@ class CustomUserModelTest(TestCase):
         """
         # Premier utilisateur
         User.objects.create_user(
-            email='unique@example.com',
-            username='user1',
-            password=TEST_USER_PASSWORD
+            email="unique@example.com",
+            username="user1",
+            password=TEST_USER_PASSWORD,
         )
 
         # Tentative de création d'un second utilisateur avec le même email
         with self.assertRaises(IntegrityError):
             User.objects.create_user(
-                email='unique@example.com',
-                username='user2',
-                password=TEST_USER_PASSWORD
+                email="unique@example.com",
+                username="user2",
+                password=TEST_USER_PASSWORD,
             )
 
     def test_username_field_configuration(self):
@@ -126,8 +126,8 @@ class CustomUserModelTest(TestCase):
 
         Objectif : Vérifier que l'email est utilisé pour l'authentification
         """
-        self.assertEqual(User.USERNAME_FIELD, 'email')
-        self.assertEqual(User.REQUIRED_FIELDS, ['username'])
+        self.assertEqual(User.USERNAME_FIELD, "email")
+        self.assertEqual(User.REQUIRED_FIELDS, ["username"])
 
     def test_gender_choices_validation(self):
         """
@@ -135,14 +135,14 @@ class CustomUserModelTest(TestCase):
 
         Objectif : Vérifier que seules les valeurs autorisées sont acceptées
         """
-        valid_choices = ['M', 'F', 'O', 'N', '']
+        valid_choices = ["M", "F", "O", "N", ""]
 
         for choice in valid_choices:
             user = User.objects.create_user(
-                email=f'gender_{choice}@example.com',
-                username=f'gender_{choice}',
+                email=f"gender_{choice}@example.com",
+                username=f"gender_{choice}",
                 password=TEST_USER_PASSWORD,
-                sexe=choice
+                sexe=choice,
             )
             self.assertEqual(user.sexe, choice)
 
@@ -153,25 +153,25 @@ class CustomUserModelTest(TestCase):
         Objectif : Vérifier que la bio est limitée à 180 caractères
         """
         # Bio valide (exactement 180 caractères)
-        valid_bio = 'a' * 180
+        valid_bio = "a" * 180
         user = User.objects.create_user(
-            email='validbio@example.com',
-            username='validbio',
+            email="validbio@example.com",
+            username="validbio",
             password=TEST_USER_PASSWORD,
-            bio=valid_bio
+            bio=valid_bio,
         )
         self.assertEqual(user.bio, valid_bio)
 
         # Bio trop longue (sera tronquée par Django ou erreur)
-        long_bio = 'a' * 200
+        long_bio = "a" * 200
         user_long = User.objects.create_user(
-            email='longbio@example.com',
-            username='longbio',
-            password=TEST_USER_PASSWORD
+            email="longbio@example.com",
+            username="longbio",
+            password=TEST_USER_PASSWORD,
         )
         # Tenter d'assigner une bio trop longue
         user_long.bio = long_bio
-        
+
         # Django peut soit tronquer, soit lever une exception
         # On teste que l'application ne plante pas
         try:
@@ -190,21 +190,21 @@ class CustomUserModelTest(TestCase):
         Objectif : Vérifier le support international complet
         """
         unicode_user = User.objects.create_user(
-            email='unicode@exemple.com',  # Domaine latin au lieu de caractères japonais
-            username='用户名',
+            email="unicode@exemple.com",  # Domaine latin au lieu de caractères japonais
+            username="用户名",
             password=TEST_USER_PASSWORD,
-            bio='Bio avec émojis 🌙✨ et caractères spéciaux àéîôù'
+            bio="Bio avec émojis 🌙✨ et caractères spéciaux àéîôù",
         )
 
         # Vérifications
-        self.assertEqual(unicode_user.email, 'unicode@exemple.com')
-        self.assertEqual(unicode_user.username, '用户名')
-        self.assertIn('🌙✨', unicode_user.bio)
-        self.assertIn('àéîôù', unicode_user.bio)
+        self.assertEqual(unicode_user.email, "unicode@exemple.com")
+        self.assertEqual(unicode_user.username, "用户名")
+        self.assertIn("🌙✨", unicode_user.bio)
+        self.assertIn("àéîôù", unicode_user.bio)
 
         # Vérifier la persistence
         unicode_user.refresh_from_db()
-        self.assertEqual(unicode_user.email, 'unicode@exemple.com')
+        self.assertEqual(unicode_user.email, "unicode@exemple.com")
 
 
 class CustomUserPropertiesTest(TestCase):
@@ -228,10 +228,10 @@ class CustomUserPropertiesTest(TestCase):
         # Test simple et fiable: utilisateur né il y a exactement 25 ans
         birth_25_years_ago = date(today.year - 25, today.month, today.day)
         user_25 = User.objects.create_user(
-            email='age25@example.com',
-            username='age25',
+            email="age25@example.com",
+            username="age25",
             password=TEST_USER_PASSWORD,
-            date_of_birth=birth_25_years_ago
+            date_of_birth=birth_25_years_ago,
         )
         self.assertEqual(user_25.age, 25)
 
@@ -242,23 +242,29 @@ class CustomUserPropertiesTest(TestCase):
             future_year = today.year - 25
             if future_month <= today.month:
                 future_year += 1
-            
-            birth_future_birthday = date(future_year, future_month or 12, today.day)
-            
-            user_24 = User.objects.create_user(
-                email='age24@example.com',
-                username='age24',
-                password=TEST_USER_PASSWORD,
-                date_of_birth=birth_future_birthday
+
+            birth_future_birthday = date(
+                future_year, future_month or 12, today.day
             )
-            
+
+            user_24 = User.objects.create_user(
+                email="age24@example.com",
+                username="age24",
+                password=TEST_USER_PASSWORD,
+                date_of_birth=birth_future_birthday,
+            )
+
             # Cette personne a 24 ans car son anniversaire n'est pas encore passé cette année
             expected_age = today.year - birth_future_birthday.year
-            if today < date(today.year, birth_future_birthday.month, birth_future_birthday.day):
+            if today < date(
+                today.year,
+                birth_future_birthday.month,
+                birth_future_birthday.day,
+            ):
                 expected_age -= 1
-                
+
             self.assertEqual(user_24.age, expected_age)
-            
+
         except ValueError:
             # Si problème avec les dates, on passe ce test
             pass
@@ -266,10 +272,10 @@ class CustomUserPropertiesTest(TestCase):
         # Test plus simple: utilisateur né il y a exactement 30 ans
         birth_30_years = date(today.year - 30, today.month, today.day)
         user_30 = User.objects.create_user(
-            email='age30@example.com',
-            username='age30',
+            email="age30@example.com",
+            username="age30",
             password=TEST_USER_PASSWORD,
-            date_of_birth=birth_30_years
+            date_of_birth=birth_30_years,
         )
         self.assertEqual(user_30.age, 30)
 
@@ -284,26 +290,34 @@ class CustomUserPropertiesTest(TestCase):
         # Test 1: Anniversaire aujourd'hui
         birthday_today = date(today.year - 30, today.month, today.day)
         user_birthday = User.objects.create_user(
-            email='birthday@example.com',
-            username='birthday',
+            email="birthday@example.com",
+            username="birthday",
             password=TEST_USER_PASSWORD,
-            date_of_birth=birthday_today
+            date_of_birth=birthday_today,
         )
         self.assertEqual(user_birthday.age, 30)
 
         # Test 2: Né il y a 1 mois (a déjà eu son anniversaire cette année)
         try:
-            one_month_ago = today.replace(month=today.month-1) if today.month > 1 else today.replace(year=today.year-1, month=12)
-            birth_one_month_ago = date(today.year - 25, one_month_ago.month, min(one_month_ago.day, 28))
-            
+            one_month_ago = (
+                today.replace(month=today.month - 1)
+                if today.month > 1
+                else today.replace(year=today.year - 1, month=12)
+            )
+            birth_one_month_ago = date(
+                today.year - 25,
+                one_month_ago.month,
+                min(one_month_ago.day, 28),
+            )
+
             user_past_birthday = User.objects.create_user(
-                email='past_birthday@example.com',
-                username='past_birthday',
+                email="past_birthday@example.com",
+                username="past_birthday",
                 password=TEST_USER_PASSWORD,
-                date_of_birth=birth_one_month_ago
+                date_of_birth=birth_one_month_ago,
             )
             self.assertEqual(user_past_birthday.age, 25)
-            
+
         except ValueError:
             # Si problème avec les dates, on passe ce test
             pass
@@ -315,9 +329,9 @@ class CustomUserPropertiesTest(TestCase):
         Objectif : Vérifier que None est retourné quand pas de date
         """
         user_no_birth = User.objects.create_user(
-            email='nobirth@example.com',
-            username='nobirth',
-            password=TEST_USER_PASSWORD
+            email="nobirth@example.com",
+            username="nobirth",
+            password=TEST_USER_PASSWORD,
         )
 
         self.assertIsNone(user_no_birth.age)
@@ -338,24 +352,26 @@ class CustomUserPropertiesTest(TestCase):
             birth_month = (i % 12) + 1
             birth_day = min((i % 28) + 1, 28)
             birth_date = date(birth_year, birth_month, birth_day)
-            
-            users_data.append(User(
-                email=f'perf_{i}@example.com',
-                username=f'perf_{i}',
-                password='temppass',  # Password simple pour bulk_create
-                date_of_birth=birth_date,
-                bio=f'Bio {i}'
-            ))
+
+            users_data.append(
+                User(
+                    email=f"perf_{i}@example.com",
+                    username=f"perf_{i}",
+                    password="temppass",  # Password simple pour bulk_create
+                    date_of_birth=birth_date,
+                    bio=f"Bio {i}",
+                )
+            )
 
         # Création en une seule opération
         created_users = User.objects.bulk_create(users_data)
-        
+
         # Recharger pour avoir les propriétés calculées
-        users = User.objects.filter(email__startswith='perf_').select_related()
-        
+        users = User.objects.filter(email__startswith="perf_").select_related()
+
         # Calculer tous les âges
         ages = [user.age for user in users]
-        
+
         end_time = time.time()
         execution_time = end_time - start_time
 
@@ -363,7 +379,11 @@ class CustomUserPropertiesTest(TestCase):
         self.assertEqual(len(ages), 20)
         self.assertTrue(all(isinstance(age, int) for age in ages))
         # Seuil plus réaliste pour environnements CI/CD lents
-        self.assertLess(execution_time, 15.0, f"Age calculation too slow: {execution_time:.2f}s")
+        self.assertLess(
+            execution_time,
+            15.0,
+            f"Age calculation too slow: {execution_time:.2f}s",
+        )
 
     def test_profile_picture_detection(self):
         """
@@ -372,9 +392,9 @@ class CustomUserPropertiesTest(TestCase):
         Objectif : Vérifier les propriétés has_profile_picture et profile_picture_url
         """
         user = User.objects.create_user(
-            email='picture@example.com',
-            username='picture',
-            password=TEST_USER_PASSWORD
+            email="picture@example.com",
+            username="picture",
+            password=TEST_USER_PASSWORD,
         )
 
         # Sans image
@@ -382,8 +402,10 @@ class CustomUserPropertiesTest(TestCase):
         self.assertIsNone(user.profile_picture_url)
 
         # Avec image base64
-        fake_image_data = base64.b64encode(b"fake_image_data").decode('utf-8')
-        user.profile_picture_base64 = f"data:image/png;base64,{fake_image_data}"
+        fake_image_data = base64.b64encode(b"fake_image_data").decode("utf-8")
+        user.profile_picture_base64 = (
+            f"data:image/png;base64,{fake_image_data}"
+        )
         user.save()
 
         # Avec image
@@ -409,9 +431,9 @@ class CustomUserImageTest(TestCase):
         Objectif : Vérifier que les images de profil sont stockées en base64
         """
         user = User.objects.create_user(
-            email='image@example.com',
-            username='imageuser',
-            password=TEST_USER_PASSWORD
+            email="image@example.com",
+            username="imageuser",
+            password=TEST_USER_PASSWORD,
         )
 
         # Sans image
@@ -420,13 +442,15 @@ class CustomUserImageTest(TestCase):
 
         # Avec image base64
         fake_image_bytes = b"fake_profile_picture_data"
-        user.set_profile_picture_from_bytes(fake_image_bytes, format='PNG')
+        user.set_profile_picture_from_bytes(fake_image_bytes, format="PNG")
         user.save()
 
         # Vérifications
         self.assertTrue(user.has_profile_picture)
         self.assertIsNotNone(user.profile_picture_url)
-        self.assertTrue(user.profile_picture_url.startswith("data:image/png;base64,"))
+        self.assertTrue(
+            user.profile_picture_url.startswith("data:image/png;base64,")
+        )
 
     def test_profile_picture_different_formats(self):
         """
@@ -435,26 +459,34 @@ class CustomUserImageTest(TestCase):
         Objectif : Vérifier le support de différents formats
         """
         user = User.objects.create_user(
-            email='formats@example.com',
-            username='formats',
-            password=TEST_USER_PASSWORD
+            email="formats@example.com",
+            username="formats",
+            password=TEST_USER_PASSWORD,
         )
 
         # Test PNG
-        user.set_profile_picture_from_bytes(b"fake_png", format='PNG')
-        self.assertTrue(user.profile_picture_base64.startswith("data:image/png;base64,"))
+        user.set_profile_picture_from_bytes(b"fake_png", format="PNG")
+        self.assertTrue(
+            user.profile_picture_base64.startswith("data:image/png;base64,")
+        )
 
         # Test JPEG
-        user.set_profile_picture_from_bytes(b"fake_jpeg", format='JPEG')
-        self.assertTrue(user.profile_picture_base64.startswith("data:image/jpeg;base64,"))
+        user.set_profile_picture_from_bytes(b"fake_jpeg", format="JPEG")
+        self.assertTrue(
+            user.profile_picture_base64.startswith("data:image/jpeg;base64,")
+        )
 
         # Test JPG (doit être converti en jpeg)
-        user.set_profile_picture_from_bytes(b"fake_jpg", format='JPG')
-        self.assertTrue(user.profile_picture_base64.startswith("data:image/jpeg;base64,"))
+        user.set_profile_picture_from_bytes(b"fake_jpg", format="JPG")
+        self.assertTrue(
+            user.profile_picture_base64.startswith("data:image/jpeg;base64,")
+        )
 
         # Test GIF
-        user.set_profile_picture_from_bytes(b"fake_gif", format='GIF')
-        self.assertTrue(user.profile_picture_base64.startswith("data:image/gif;base64,"))
+        user.set_profile_picture_from_bytes(b"fake_gif", format="GIF")
+        self.assertTrue(
+            user.profile_picture_base64.startswith("data:image/gif;base64,")
+        )
 
     def test_profile_picture_encoding_accuracy(self):
         """
@@ -463,19 +495,23 @@ class CustomUserImageTest(TestCase):
         Objectif : Vérifier que l'encodage/décodage est fidèle
         """
         user = User.objects.create_user(
-            email='encoding@example.com',
-            username='encoding',
-            password=TEST_USER_PASSWORD
+            email="encoding@example.com",
+            username="encoding",
+            password=TEST_USER_PASSWORD,
         )
 
         # Données d'image test avec caractères spéciaux
-        original_bytes = b"profile_picture_data_with_special_chars_\x00\x01\x02\xff"
+        original_bytes = (
+            b"profile_picture_data_with_special_chars_\x00\x01\x02\xff"
+        )
 
         # Encoder
-        user.set_profile_picture_from_bytes(original_bytes, format='PNG')
+        user.set_profile_picture_from_bytes(original_bytes, format="PNG")
 
         # Vérifier que le base64 est correct
-        base64_part = user.profile_picture_base64.split(',')[1]  # Retirer le préfixe data:
+        base64_part = user.profile_picture_base64.split(",")[
+            1
+        ]  # Retirer le préfixe data:
         decoded_bytes = base64.b64decode(base64_part)
 
         self.assertEqual(decoded_bytes, original_bytes)
@@ -499,17 +535,17 @@ class CustomUserValidationTest(TestCase):
         Objectif : Vérifier que seuls les emails valides sont acceptés
         """
         valid_emails = [
-            'simple@example.com',
-            'user.name@example.com',
-            'user+tag@example.co.uk',
-            'user_name@sub.example.org',
+            "simple@example.com",
+            "user.name@example.com",
+            "user+tag@example.co.uk",
+            "user_name@sub.example.org",
         ]
 
         for email in valid_emails:
             user = User.objects.create_user(
                 email=email,
-                username=f'user_{hash(email) % 10000}',  # Username unique
-                password=TEST_USER_PASSWORD
+                username=f"user_{hash(email) % 10000}",  # Username unique
+                password=TEST_USER_PASSWORD,
             )
             self.assertEqual(user.email, email)
 
@@ -524,20 +560,20 @@ class CustomUserValidationTest(TestCase):
         # Date valide (25 ans)
         valid_birth = date(today.year - 25, 6, 15)
         user = User.objects.create_user(
-            email='valid_birth@example.com',
-            username='valid_birth',
+            email="valid_birth@example.com",
+            username="valid_birth",
             password=TEST_USER_PASSWORD,
-            date_of_birth=valid_birth
+            date_of_birth=valid_birth,
         )
         self.assertEqual(user.date_of_birth, valid_birth)
 
         # Date dans le futur (doit être gérée gracieusement)
         future_birth = today + timedelta(days=365)
         user_future = User.objects.create_user(
-            email='future@example.com',
-            username='future',
+            email="future@example.com",
+            username="future",
             password=TEST_USER_PASSWORD,
-            date_of_birth=future_birth
+            date_of_birth=future_birth,
         )
         # Django peut accepter ou rejeter, mais ne doit pas planter
         self.assertIsInstance(user_future.age, (int, type(None)))
@@ -549,18 +585,18 @@ class CustomUserValidationTest(TestCase):
         Objectif : Vérifier que tous les choix sont fonctionnels
         """
         gender_choices = [
-            ('M', 'Homme'),
-            ('F', 'Femme'),
-            ('O', 'Autre'),
-            ('N', 'Préfère ne pas dire'),
+            ("M", "Homme"),
+            ("F", "Femme"),
+            ("O", "Autre"),
+            ("N", "Préfère ne pas dire"),
         ]
 
         for choice_value, choice_label in gender_choices:
             user = User.objects.create_user(
-                email=f'gender_{choice_value.lower()}@example.com',
-                username=f'gender_{choice_value.lower()}',
+                email=f"gender_{choice_value.lower()}@example.com",
+                username=f"gender_{choice_value.lower()}",
                 password=TEST_USER_PASSWORD,
-                sexe=choice_value
+                sexe=choice_value,
             )
             self.assertEqual(user.sexe, choice_value)
 
@@ -572,28 +608,28 @@ class CustomUserValidationTest(TestCase):
         """
         # Bio normale
         user = User.objects.create_user(
-            email='bio@example.com',
-            username='bio',
+            email="bio@example.com",
+            username="bio",
             password=TEST_USER_PASSWORD,
-            bio='Une bio normale de test'
+            bio="Une bio normale de test",
         )
-        self.assertEqual(user.bio, 'Une bio normale de test')
+        self.assertEqual(user.bio, "Une bio normale de test")
 
         # Bio vide par défaut
         user_empty = User.objects.create_user(
-            email='empty_bio@example.com',
-            username='empty_bio',
-            password=TEST_USER_PASSWORD
+            email="empty_bio@example.com",
+            username="empty_bio",
+            password=TEST_USER_PASSWORD,
         )
-        self.assertEqual(user_empty.bio, '')
+        self.assertEqual(user_empty.bio, "")
 
         # Bio avec caractères spéciaux
-        special_bio = 'Bio avec émojis 😀🎉 et accents àéîôù'
+        special_bio = "Bio avec émojis 😀🎉 et accents àéîôù"
         user_special = User.objects.create_user(
-            email='special@example.com',
-            username='special',
+            email="special@example.com",
+            username="special",
             password=TEST_USER_PASSWORD,
-            bio=special_bio
+            bio=special_bio,
         )
         self.assertEqual(user_special.bio, special_bio)
 
@@ -619,10 +655,10 @@ class CustomUserPerformanceTest(TestCase):
         for i in range(30):
             users_data.append(
                 User(
-                    email=f'bulk_{i}@example.com',
-                    username=f'bulk_{i}',
+                    email=f"bulk_{i}@example.com",
+                    username=f"bulk_{i}",
                     # Password simple pour bulk_create (pas de hashage complexe)
-                    bio=f'Bio {i}'
+                    bio=f"Bio {i}",
                 )
             )
 
@@ -633,8 +669,14 @@ class CustomUserPerformanceTest(TestCase):
         execution_time = end_time - start_time
 
         # Seuils réalistes pour environnements CI/CD
-        self.assertLess(execution_time, 10.0, f"Bulk creation too slow: {execution_time:.2f}s")
-        self.assertEqual(User.objects.filter(email__contains='bulk_').count(), 30)
+        self.assertLess(
+            execution_time,
+            10.0,
+            f"Bulk creation too slow: {execution_time:.2f}s",
+        )
+        self.assertEqual(
+            User.objects.filter(email__contains="bulk_").count(), 30
+        )
 
     def test_large_base64_profile_picture_performance(self):
         """
@@ -643,9 +685,9 @@ class CustomUserPerformanceTest(TestCase):
         Objectif : Mesurer l'impact des images sur la DB avec seuils réalistes
         """
         user = User.objects.create_user(
-            email='large_profile@example.com',
-            username='large_profile',
-            password=TEST_USER_PASSWORD
+            email="large_profile@example.com",
+            username="large_profile",
+            password=TEST_USER_PASSWORD,
         )
 
         # Image plus petite pour CI/CD (50KB au lieu de 500KB)
@@ -653,7 +695,7 @@ class CustomUserPerformanceTest(TestCase):
 
         # Test d'écriture
         start_time = time.time()
-        user.set_profile_picture_from_bytes(large_image, format='JPEG')
+        user.set_profile_picture_from_bytes(large_image, format="JPEG")
         user.save()
         write_time = time.time() - start_time
 
@@ -664,8 +706,12 @@ class CustomUserPerformanceTest(TestCase):
         read_time = time.time() - start_time
 
         # Seuils très réalistes pour CI/CD (environnements lents)
-        self.assertLess(write_time, 10.0, f"Écriture trop lente: {write_time:.2f}s")
-        self.assertLess(read_time, 5.0, f"Lecture trop lente: {read_time:.2f}s")
+        self.assertLess(
+            write_time, 10.0, f"Écriture trop lente: {write_time:.2f}s"
+        )
+        self.assertLess(
+            read_time, 5.0, f"Lecture trop lente: {read_time:.2f}s"
+        )
 
         # Vérifier que l'image est bien stockée
         self.assertTrue(user.has_profile_picture)
@@ -682,11 +728,11 @@ class CustomUserPerformanceTest(TestCase):
         for i in range(50):
             users_data.append(
                 User(
-                    email=f'query_{i}@example.com',
-                    username=f'query_{i}',
-                    password='simple_pass',  # Password simple
-                    sexe='M' if i % 2 == 0 else 'F',
-                    bio=f'Bio {i}'
+                    email=f"query_{i}@example.com",
+                    username=f"query_{i}",
+                    password="simple_pass",  # Password simple
+                    sexe="M" if i % 2 == 0 else "F",
+                    bio=f"Bio {i}",
                 )
             )
 
@@ -695,15 +741,27 @@ class CustomUserPerformanceTest(TestCase):
         start_time = time.time()
 
         # Requêtes optimisées
-        all_users = list(User.objects.filter(email__startswith='query_').order_by('-date_joined')[:10])
-        male_users = User.objects.filter(email__startswith='query_', sexe='M').count()
-        users_with_bio = User.objects.filter(email__startswith='query_').exclude(bio='').count()
+        all_users = list(
+            User.objects.filter(email__startswith="query_").order_by(
+                "-date_joined"
+            )[:10]
+        )
+        male_users = User.objects.filter(
+            email__startswith="query_", sexe="M"
+        ).count()
+        users_with_bio = (
+            User.objects.filter(email__startswith="query_")
+            .exclude(bio="")
+            .count()
+        )
 
         end_time = time.time()
         execution_time = end_time - start_time
 
         # Seuils réalistes pour CI/CD
-        self.assertLess(execution_time, 5.0, f"Queries too slow: {execution_time:.2f}s")
+        self.assertLess(
+            execution_time, 5.0, f"Queries too slow: {execution_time:.2f}s"
+        )
         self.assertEqual(len(all_users), 10)
         self.assertEqual(male_users, 25)
         self.assertEqual(users_with_bio, 50)
@@ -725,12 +783,14 @@ class CustomUserEdgeCasesTest(TestCase):
 
         Objectif : Vérifier la gestion des limites de champs
         """
-        long_username = 'a' * 150  # Django username max_length = 150 par défaut
+        long_username = (
+            "a" * 150
+        )  # Django username max_length = 150 par défaut
 
         user = User.objects.create_user(
-            email='longusername@example.com',
+            email="longusername@example.com",
             username=long_username,
-            password=TEST_USER_PASSWORD
+            password=TEST_USER_PASSWORD,
         )
 
         self.assertEqual(user.username, long_username)
@@ -742,12 +802,12 @@ class CustomUserEdgeCasesTest(TestCase):
         Objectif : Vérifier la gestion des âges extrêmes
         """
         very_old_birth = date(1900, 1, 1)
-        
+
         user = User.objects.create_user(
-            email='veryold@example.com',
-            username='veryold',
+            email="veryold@example.com",
+            username="veryold",
             password=TEST_USER_PASSWORD,
-            date_of_birth=very_old_birth
+            date_of_birth=very_old_birth,
         )
 
         # L'âge doit être calculable même pour des personnes très âgées
@@ -760,13 +820,15 @@ class CustomUserEdgeCasesTest(TestCase):
 
         Objectif : Vérifier la gestion des années bissextiles
         """
-        leap_year_birth = date(2000, 2, 29)  # 29 février 2000 (année bissextile)
+        leap_year_birth = date(
+            2000, 2, 29
+        )  # 29 février 2000 (année bissextile)
 
         user = User.objects.create_user(
-            email='leap@example.com',
-            username='leap',
+            email="leap@example.com",
+            username="leap",
             password=TEST_USER_PASSWORD,
-            date_of_birth=leap_year_birth
+            date_of_birth=leap_year_birth,
         )
 
         # L'âge doit être calculable pour les années bissextiles
@@ -780,13 +842,15 @@ class CustomUserEdgeCasesTest(TestCase):
         Objectif : Vérifier la robustesse face aux données corrompues
         """
         user = User.objects.create_user(
-            email='corrupt@example.com',
-            username='corrupt',
-            password=TEST_USER_PASSWORD
+            email="corrupt@example.com",
+            username="corrupt",
+            password=TEST_USER_PASSWORD,
         )
 
         # Simuler une corruption en assignant directement du base64 invalide
-        user.profile_picture_base64 = "data:image/png;base64,corrupted_base64_data_!!!"
+        user.profile_picture_base64 = (
+            "data:image/png;base64,corrupted_base64_data_!!!"
+        )
         user.save()
 
         # Ne doit pas planter lors de l'accès

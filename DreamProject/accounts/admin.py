@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 
 CustomUser = get_user_model()
 
+
 @admin.register(CustomUser)
 class CustomUserAdmin(UserAdmin):
     """
@@ -14,21 +15,31 @@ class CustomUserAdmin(UserAdmin):
     """
 
     # Liste dans /admin/accounts/customuser/
-    list_display = ("email", "username", "first_name", "last_name",
-                    "is_staff", "is_active", "is_superuser")
+    list_display = (
+        "email",
+        "username",
+        "first_name",
+        "last_name",
+        "is_staff",
+        "is_active",
+        "is_superuser",
+    )
     search_fields = ("email", "username", "first_name", "last_name")
     ordering = ("email",)  # tri par email
 
     # On conserve les fieldsets par défaut et on ajoute tes champs custom
     fieldsets = UserAdmin.fieldsets + (
-        ("Profil", {
-            "fields": (
-                "date_of_birth",
-                "sexe",
-                "profile_picture_base64",
-                "bio",
-            )
-        }),
+        (
+            "Profil",
+            {
+                "fields": (
+                    "date_of_birth",
+                    "sexe",
+                    "profile_picture_base64",
+                    "bio",
+                )
+            },
+        ),
     )
 
     # Le formulaire d’ajout utilise le USERNAME_FIELD du modèle (email),
