@@ -79,9 +79,7 @@ def dream_diary_view(request):
 @login_required
 @require_POST
 def delete_dream(request, dream_id):
-    """method to delete a dream from the UI & and database
-    of the user.
-    """
+    """methode qui supprime un reve en base de données et dans l'ihm"""
     try:
         dream = Dream.objects.get(id=dream_id, user=request.user)
         dream.delete()

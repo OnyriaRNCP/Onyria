@@ -1,5 +1,5 @@
 """
-Module used to define all models of the diary app
+Definitions des schemas de bases de données du diary
 """
 
 import json
@@ -9,9 +9,8 @@ from django.conf import settings
 
 
 class Dream(models.Model):
-    """ "
-    Class to define the model database for the dream table
-    Stocks all the data concerning a user's dream
+    """
+    definit les modeles de bases de données pour la table de reve de chaque utilisateur
     """
 
     DREAM_TYPES = [
@@ -68,7 +67,7 @@ class Dream(models.Model):
 
     class Meta:
         """
-        Configuration class
+        classe de configuration
         """
 
         ordering = ["-date"]

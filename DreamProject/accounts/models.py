@@ -1,5 +1,5 @@
 """
-Definitions of different tables of the database of accounts
+Definitions des schemas de bases de données de la gestion des comptes
 """
 
 import base64
@@ -10,7 +10,7 @@ from django.contrib.auth.models import AbstractUser
 
 class CustomUser(AbstractUser):
     """
-    Create a user with custom fields to cover app needs
+    Creation d'un custom user pour rajouter les fields spécifiques à notre app
     """
 
     GENDER_CHOICES = [
@@ -82,7 +82,7 @@ class CustomUser(AbstractUser):
 
     @property
     def age(self):
-        """returns age calculated by date of birth given"""
+        """Retourne l'age du user calculé par sa date de naissance"""
         if not self.date_of_birth:
             return None
         today = date.today()

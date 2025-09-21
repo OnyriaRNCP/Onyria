@@ -1,5 +1,5 @@
 """
-Module for different forms of the accounts app
+Module pour les formulaire d'authentification
 """
 
 from datetime import date
@@ -9,7 +9,7 @@ from .models import CustomUser
 
 
 class RegisterForm(UserCreationForm):
-    """Registration form for first coming users"""
+    """formulaire d'inscription"""
 
     email = forms.EmailField(
         label="Adresse mail",
@@ -65,7 +65,7 @@ class RegisterForm(UserCreationForm):
         )
 
     def clean_date_of_birth(self):
-        """verify that date of birth is well formated and correct"""
+        """vérifier que les dates sont correctes et bien formatées"""
         dob = self.cleaned_data["date_of_birth"]
         today = date.today()
         if dob > today:
@@ -89,7 +89,7 @@ class RegisterForm(UserCreationForm):
 
 
 class LoginForm(forms.Form):
-    """login form for users with an existing account"""
+    """Formulaire de connexion"""
 
     email = forms.EmailField(
         label="Adresse mail",
@@ -106,7 +106,7 @@ class LoginForm(forms.Form):
 
 
 class CustomPasswordChangeForm(PasswordChangeForm):
-    """form to change password"""
+    """formulaire pour changer le mot de passe"""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -131,9 +131,11 @@ class CustomPasswordChangeForm(PasswordChangeForm):
 
 
 class BioForm(forms.ModelForm):
-    """handles user biography"""
+    """Formulaire pour la biographie"""
 
     class Meta:
+        """classe meta"""
+
         model = CustomUser
         fields = ["bio"]
         widgets = {

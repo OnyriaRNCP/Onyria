@@ -1,5 +1,5 @@
 """
-module defining all the urls  and mapping of the app
+Module qui définit les differents urls et mappings de l'app
 """
 
 from django.urls import path

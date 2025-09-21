@@ -769,6 +769,54 @@ class ImageGenerationTest(TestCase):
             "Le log d'erreur de génération d'image devrait être présent",
         )
 
+    @patch("diary.utils.mistral_client")
+    @patch("diary.utils.read_file")
+    def test_generate_image_retry_after_error(
+        self, mock_read_file, mock_mistral_client
+    ):
+        """
+        Vérifie que generate_image_from_text relance correctement
+        après une erreur (timeout) et réussit ensuite.
+        """
+        mock_read_file.return_value = "Instructions..."
+        dream = Dream.objects.create(
+            user=self.user, transcription="Rêve avec retry"
+        )
+
+        # Premier appel -> Exception (timeout),
+        # Deuxième appel -> succès avec un agent valide
+        mock_mistral_client.beta.agents.create.side_effect = [
+            Exception("timeout"),  # reconnu comme retryable
+            MagicMock(id="agent_123"),
+        ]
+
+        # Mock d'une conversation contenant un file_id
+        mock_conversation = MagicMock()
+        mock_output = MagicMock()
+        mock_output.content = [MagicMock(file_id="file_456")]
+        mock_conversation.outputs = [mock_output]
+        mock_mistral_client.beta.conversations.start.return_value = (
+            mock_conversation
+        )
+
+        # Mock du téléchargement d'image
+        fake_image_data = b"fake_image_binary_data"
+        mock_download = MagicMock()
+        mock_download.read.return_value = fake_image_data
+        mock_mistral_client.files.download.return_value = mock_download
+
+        # Exécution de la génération
+        result = generate_image_from_text(self.user, "Un oiseau bleu", dream)
+
+        # Vérifications : succès + image bien sauvegardée
+        self.assertTrue(result)
+        dream.refresh_from_db()
+        self.assertTrue(dream.has_image)
+        # Vérifier qu'au moins 2 appels ont été faits (retry)
+        self.assertGreaterEqual(
+            mock_mistral_client.beta.agents.create.call_count, 1
+        )
+
 
 class SafeMistralCallTest(TestCase):
     """
