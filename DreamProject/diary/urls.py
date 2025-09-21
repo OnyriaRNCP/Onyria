@@ -1,6 +1,5 @@
 """
-Django module for different redirections of the app.
-Defines the mapping of navigation
+module django gérant les urls de l'application
 """
 
 from django.urls import path

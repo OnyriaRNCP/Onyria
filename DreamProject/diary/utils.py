@@ -1,6 +1,5 @@
 """
-Script that regroups all our utilitary functions
-and the logic pf our application
+Script regroupant toutes nos fonctions utilitaires et de logique
 """
 
 import os
