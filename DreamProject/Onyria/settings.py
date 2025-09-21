@@ -122,6 +122,19 @@ AI_CONFIG = {
     },
     # CODES ERREUR OK pour fallback/retry - analyse Mistral
     "ANALYZE_ERROR_STATUS": [408, 429, 500, 502, 503, 504],
+    # RÈGLES DE RETRY pour la transcription Groq
+    "TRANSCRIBE_RETRYABLE_KEYWORDS": [
+        "connection error",
+        "connection reset",
+        "connection aborted",
+        "timeout",
+        "temporarily unavailable",
+        "service unavailable",
+        "tls",
+        "ssl",
+        "proxy",
+        "rate limit",
+    ],
     # RÈGLES DE FALLBACK pour l'analyse Mistral
     "ANALYZE_FALLBACK_KEYWORDS": [
         "too many requests",
@@ -149,22 +162,6 @@ AI_CONFIG = {
         "failed to generate response",
         "code 3000",
         "invalid_request_error",
-    ],
-    # RÈGLES DE RETRY pour la transcription Groq
-    "TRANSCRIBE_RETRYABLE_KEYWORDS": [
-        "connection error",
-        "connection reset",
-        "connection aborted",
-        "timeout",
-        "temporarily unavailable",
-        "service unavailable",
-        "tls",
-        "ssl",
-        "proxy",
-        "rate limit",
-        "503",
-        "502",
-        "429",
     ],
 }
 

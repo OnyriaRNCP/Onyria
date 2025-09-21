@@ -373,7 +373,7 @@ def transcribe_audio(audio_data, language="fr"):
             temp_file_path = temp_file.name
 
         # Système de retry avec backoff exponentiel et configuration centralisée
-        for attempt in range(1, AI_CONFIG["MAX_RETRIES"] + 1):
+        for attempt in range(0, AI_CONFIG["MAX_RETRIES"] + 1):
             try:
                 logger.info(
                     f"Transcription tentative {attempt}/{AI_CONFIG['MAX_RETRIES']}"
@@ -897,7 +897,7 @@ def generate_image_from_text(user, prompt_text, dream_instance):
     # baseline: retry=0 (comme transcription)
     metric_retry("mistral", operation, total_retry_count, total_backoff_ms)
 
-    for attempt in range(1, max_retries + 1):
+    for attempt in range(0, max_retries + 1):
         try:
             agent = mistral_client.beta.agents.create(
                 model=current_model,
