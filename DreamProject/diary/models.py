@@ -1,8 +1,3 @@
-    """_summary_
-
-    Returns:
-        _type_: _description_
-    """
 import json
 import base64
 from django.db import models
