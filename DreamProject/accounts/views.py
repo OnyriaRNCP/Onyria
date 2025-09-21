@@ -1,5 +1,5 @@
 """
-Module qui regroupe toutes les vues de l'app
+Module qui regroupe toutes les vues de l'app accounts
 """
 
 from django.shortcuts import render, redirect

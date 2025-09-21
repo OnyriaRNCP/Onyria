@@ -1,6 +1,5 @@
 """
-This module regroups all the views (pages)
-of the django application
+Regroupes toutes les vues (pages) de l'app diary
 """
 
 import json
