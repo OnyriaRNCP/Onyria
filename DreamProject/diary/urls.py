@@ -1,3 +1,8 @@
+"""
+Django module for different redirections of the app.
+Defines the mapping of navigation
+"""
+
 from django.urls import path
 from . import views
 from .metrics import views as metrics_views

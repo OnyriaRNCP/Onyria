@@ -1,10 +1,19 @@
-from django.db import models
-from django.conf import settings
+"""
+Module used to define all models of the diary app
+"""
+
 import json
 import base64
+from django.db import models
+from django.conf import settings
 
 
 class Dream(models.Model):
+    """ "
+    Class to define the model database for the dream table
+    Stocks all the data concerning a user's dream
+    """
+
     DREAM_TYPES = [
         ("rêve", "Rêve"),
         ("cauchemar", "Cauchemar"),
@@ -58,6 +67,10 @@ class Dream(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """
+        Configuration class
+        """
+
         ordering = ["-date"]
         verbose_name = "Rêve"
         verbose_name_plural = "Rêves"

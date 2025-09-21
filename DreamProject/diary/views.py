@@ -1,3 +1,8 @@
+"""
+This module regroups all the views (pages)
+of the django application
+"""
+
 import json
 import time
 import uuid
@@ -74,13 +79,16 @@ def dream_diary_view(request):
 @login_required
 @require_POST
 def delete_dream(request, dream_id):
+    """method to delete a dream from the UI & and database
+    of the user.
+    """
     try:
         dream = Dream.objects.get(id=dream_id, user=request.user)
         dream.delete()
         return JsonResponse({"success": True})
     except Dream.DoesNotExist:
         return JsonResponse({"error": "Rêve introuvable"}, status=404)
-    except Exception as e:
+    except Exception:
         return JsonResponse(
             {"error": "Erreur lors de la suppression"}, status=500
         )
@@ -128,7 +136,9 @@ def dream_recorder_view(request):
 @login_required
 @csrf_exempt
 def analyse_from_voice(request):
-    """Version SSE (Server-Sent Events) de analyse_from_voice pour affichage progressif des éléments"""
+    """Version SSE (Server-Sent Events) de
+    analyse_from_voice pour affichage progressif des éléments
+    """
 
     def event_stream():
         # ID de session SSE unique pour tracking
@@ -413,7 +423,8 @@ def analyse_from_voice(request):
 
 @login_required
 def dream_followup(request):
-    """Page de suivi des rêves avec statistiques et graphiques + filtres temporels"""
+    """Page de suivi des rêves avec statistiques
+    et graphiques + filtres temporels"""
 
     # Récupération des paramètres de filtre
     period = request.GET.get("period", "all")
