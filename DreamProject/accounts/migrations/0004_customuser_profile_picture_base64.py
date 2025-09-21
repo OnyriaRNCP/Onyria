@@ -6,13 +6,18 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0003_customuser_bio'),
+        ("accounts", "0003_customuser_bio"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='customuser',
-            name='profile_picture_base64',
-            field=models.TextField(blank=True, help_text='Photo de profil encodée en base64', null=True, verbose_name='Photo de profil (base64)'),
+            model_name="customuser",
+            name="profile_picture_base64",
+            field=models.TextField(
+                blank=True,
+                help_text="Photo de profil encodée en base64",
+                null=True,
+                verbose_name="Photo de profil (base64)",
+            ),
         ),
     ]
