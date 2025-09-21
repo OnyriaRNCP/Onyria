@@ -1,4 +1,9 @@
+"""
+Module qui définit les differents urls et mappings de l'app
+"""
+
 from django.urls import path
+from django.contrib.auth import views as auth_views
 from .views import (
     register_view,
     login_view,
@@ -8,7 +13,6 @@ from .views import (
     custom_password_change_view,
     edit_bio,
 )
-from django.contrib.auth import views as auth_views
 
 urlpatterns = [
     path("register/", register_view, name="register"),

@@ -64,7 +64,7 @@ class RegisterViewTest(TestCase):
             "date_of_birth": "1995-06-15",
         }
 
-        print(f"\n=== TEST: register_view minimal ===")
+        print("\n=== TEST: register_view minimal ===")
         print(f"Form data: {form_data}")
 
         response = self.client.post(reverse("register"), form_data)
@@ -121,7 +121,7 @@ class RegisterViewTest(TestCase):
             "date_of_birth": "1995-06-15",
         }
 
-        print(f"\n=== TEST: auto-login after register ===")
+        print("\n=== TEST: auto-login after register ===")
 
         # Vérifier qu'on n'est pas connecté au départ
         response_before = self.client.get(reverse("account_management"))
@@ -624,9 +624,9 @@ class PasswordChangeViewTest(TestCase):
             "new_password2": "TotallyDifferentComplexPassword789!",
         }
 
-        print(f"\n=== TEST: password change ===")
+        print("\n=== TEST: password change ===")
         print(f"Old password: {TEST_USER_PASSWORD}")
-        print(f"New password: TotallyDifferentComplexPassword789!")
+        print("New password: TotallyDifferentComplexPassword789!")
 
         response = self.client.post(reverse("password_change"), form_data)
 
@@ -1035,7 +1035,7 @@ class ViewsPerformanceTest(TestCase):
         end_time = time.time()
         execution_time = end_time - start_time
 
-        print(f"\n=== TEST: register performance ===")
+        print("\n=== TEST: register performance ===")
         print(f"Execution time: {execution_time:.3f}s")
         print(f"Response status: {response.status_code}")
 

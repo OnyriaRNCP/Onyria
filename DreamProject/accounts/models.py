@@ -1,10 +1,18 @@
-from django.db import models
-from django.contrib.auth.models import AbstractUser
+"""
+Definitions des schemas de bases de données de la gestion des comptes
+"""
+
 import base64
 from datetime import date
+from django.db import models
+from django.contrib.auth.models import AbstractUser
 
 
 class CustomUser(AbstractUser):
+    """
+    Creation d'un custom user pour rajouter les fields spécifiques à notre app
+    """
+
     GENDER_CHOICES = [
         ("M", "Homme"),
         ("F", "Femme"),
@@ -72,9 +80,9 @@ class CustomUser(AbstractUser):
         """Retourne l'URL de la photo de profil en base64"""
         return self.profile_picture_base64
 
-    # Âge calculé automatiquement à partir de la date de naissance
     @property
     def age(self):
+        """Retourne l'age du user calculé par sa date de naissance"""
         if not self.date_of_birth:
             return None
         today = date.today()

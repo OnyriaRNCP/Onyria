@@ -572,12 +572,12 @@ class DreamModelTest(TestCase):
         )
 
         # === LOGS DE DEBUG ===
-        print(f"\n=== Test de concurrence réussi ===")
+        print("\n=== Test de concurrence réussi ===")
         print(f"Threads: {num_threads}")
         print(f"Rêves par thread: {dreams_per_thread}")
         print(f"Total créé: {db_dreams_count}")
         print(f"Temps d'exécution: {execution_time:.2f}s")
-        print(f"Débit: {total_expected/execution_time:.1f} rêves/seconde")
+        print(f"Débit: {total_expected / execution_time:.1f} rêves/seconde")
 
     @unittest.skipIf(os.environ.get("DATABASE_URL"), "Test SQLite seulement.")
     def test_concurrent_dream_creation_fallback_sqlite(self):
@@ -627,10 +627,10 @@ class DreamModelTest(TestCase):
             f"Création séquentielle trop lente: {execution_time:.2f}s",
         )
 
-        print(f"\n=== Test séquentiel SQLite ===")
+        print("\n=== Test séquentiel SQLite ===")
         print(f"Rêves créés: {created_count}")
         print(f"Temps: {execution_time:.2f}s")
-        print(f"Débit: {num_dreams/execution_time:.1f} rêves/seconde")
+        print(f"Débit: {num_dreams / execution_time:.1f} rêves/seconde")
 
 
 class DreamModelImageBase64Test(TestCase):
@@ -1087,7 +1087,7 @@ class DreamModelPerformanceTest(TestCase):
             f"Requêtes trop lentes avec images base64: {execution_time:.2f}s",
         )
 
-        print(f"\n=== Performance avec images base64 ===")
+        print("\n=== Performance avec images base64 ===")
         print(f"Rêves avec images: {len(dreams_with_images_query)}")
         print(f"Rêves sans images: {len(dreams_without_images_query)}")
         print(f"Temps requêtes: {execution_time:.2f}s")
@@ -1129,7 +1129,7 @@ class DreamModelPerformanceTest(TestCase):
         self.assertTrue(dream.has_image)
         self.assertIsNotNone(image_url)
 
-        print(f"\n=== Performance grosse image (1MB) ===")
+        print("\n=== Performance grosse image (1MB) ===")
         print(f"Écriture: {write_time:.2f}s")
         print(f"Lecture: {read_time:.2f}s")
 
@@ -1169,7 +1169,7 @@ Ce module teste complètement le modèle Dream et ses fonctionnalités :
 5. TESTS DE CONCURRENCE :
    - test_concurrent_dream_creation : Skippé sur SQLite, activé sur PostgreSQL
    - test_concurrent_dream_creation_fallback_sqlite : Version SQLite séquentielle
-   
+
 6. GESTION AUTOMATIQUE DE LA DB :
    - SQLite (dev) : Tests séquentiels, pas de problèmes de verrous
    - PostgreSQL (prod) : Tests de concurrence réels automatiquement activés

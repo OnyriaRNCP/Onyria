@@ -1,3 +1,7 @@
+"""
+module django gérant les urls de l'application
+"""
+
 from django.urls import path
 from . import views
 from .metrics import views as metrics_views

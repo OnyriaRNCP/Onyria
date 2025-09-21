@@ -965,7 +965,7 @@ class DashboardFunctionsTest(TestCase):
 
         for i, entry in enumerate(timeline):
             logger.debug(
-                f"[TIMELINE] Jour {i+1}: {entry['date']} | rêves: {entry['rêve']} | cauchemars: {entry['cauchemar']}"
+                f"[TIMELINE] Jour {i + 1}: {entry['date']} | rêves: {entry['rêve']} | cauchemars: {entry['cauchemar']}"
             )
             self.assertIn("date", entry)
             self.assertIn("rêve", entry)

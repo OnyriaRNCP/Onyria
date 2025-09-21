@@ -1,10 +1,18 @@
-from django.db import models
-from django.conf import settings
+"""
+Definitions des schemas de bases de données du diary
+"""
+
 import json
 import base64
+from django.db import models
+from django.conf import settings
 
 
 class Dream(models.Model):
+    """
+    definit les modeles de bases de données pour la table de reve de chaque utilisateur
+    """
+
     DREAM_TYPES = [
         ("rêve", "Rêve"),
         ("cauchemar", "Cauchemar"),
@@ -58,6 +66,10 @@ class Dream(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """
+        classe de configuration
+        """
+
         ordering = ["-date"]
         verbose_name = "Rêve"
         verbose_name_plural = "Rêves"
