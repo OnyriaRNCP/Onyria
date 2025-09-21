@@ -1,7 +1,11 @@
+"""
+Django module that regroups all the views of the app
+Acoounts (authentication)
+"""
+
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.models import User
 from django.views.decorators.http import require_http_methods, require_POST
 from django.views.decorators.cache import never_cache
 from .forms import RegisterForm, LoginForm, CustomPasswordChangeForm, BioForm
@@ -9,6 +13,10 @@ from .forms import RegisterForm, LoginForm, CustomPasswordChangeForm, BioForm
 
 @require_http_methods(["GET", "POST"])
 def register_view(request):
+    """
+    handles redirections and errors based on the status of
+    the user when registering
+    """
     if request.user.is_authenticated:  # déjà connecté
         return redirect("account_management")
 
@@ -29,6 +37,10 @@ def register_view(request):
 @require_http_methods(["GET", "POST"])
 @never_cache
 def login_view(request):
+    """
+    handles redirections and errors based on the status of
+    the user when logging
+    """
     if request.user.is_authenticated:  # déjà connecté
         return redirect("account_management")
 
@@ -56,6 +68,10 @@ def login_view(request):
 @require_http_methods(["GET", "POST"])
 @login_required
 def account_management_view(request):
+    """
+    view of the page account management
+    (change profile picture, name...)
+    """
     if request.method == "POST" and "profile_picture" in request.FILES:
         uploaded_file = request.FILES["profile_picture"]
 
@@ -90,6 +106,9 @@ def account_management_view(request):
 @login_required
 @never_cache
 def logout_view(request):
+    """
+    view of the logout page
+    """
     logout(request)
     return redirect(
         "login"
@@ -99,6 +118,9 @@ def logout_view(request):
 @require_http_methods(["GET", "POST"])
 @login_required
 def custom_password_change_view(request):
+    """
+    handles the password change once user is registered
+    """
     if request.method == "POST":
         form = CustomPasswordChangeForm(user=request.user, data=request.POST)
         if form.is_valid():
@@ -112,6 +134,9 @@ def custom_password_change_view(request):
 @require_http_methods(["GET", "POST"])
 @login_required
 def delete_account_view(request):
+    """
+    handles case of deleting the account
+    """
     if request.method == "POST":
         user = request.user
         user.delete()
