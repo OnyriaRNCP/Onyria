@@ -8,7 +8,6 @@ from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 from django.contrib.auth.decorators import login_required
-from django.conf import settings
 from .models import Dream
 from .utils import (
     analyze_emotions,
@@ -27,9 +26,6 @@ from .utils import (
     format_interpretation,
     transcribe_audio,
 )
-from .constants import EMOTION_LABELS, DREAM_ERROR_MESSAGE
-
-logger = logging.getLogger(__name__)
 
 # --- métriques avancées ---
 from .metrics.runtime import (
@@ -42,6 +38,9 @@ from .metrics.runtime import (
     metric_sse_abort,
 )
 
+from .constants import EMOTION_LABELS, DREAM_ERROR_MESSAGE
+
+logger = logging.getLogger(__name__)
 
 # ----- VUES PRINCIPALES ----- #
 

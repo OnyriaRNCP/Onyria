@@ -74,11 +74,8 @@ from .test_utils import *
 from .test_ai_functions import *
 from .test_integration import *
 from .test_views import *
+import os
 
-# Configuration des tests
-import django
-from django.test import TestCase
-from django.test.utils import override_settings
 
 # Métadonnées du package de tests
 __version__ = "1.0.0"
@@ -306,7 +303,6 @@ except ImportError as e:
     print("Assurez-vous que Django est installé et configuré.")
 
 # Message de bienvenue (affiché une seule fois)
-import os
 
 if os.environ.get("DJANGO_SETTINGS_MODULE") and not os.environ.get(
     "TESTS_INIT_DISPLAYED"

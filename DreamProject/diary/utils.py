@@ -1447,7 +1447,7 @@ def get_themes_stats_filtered(
             "total_dreams": total_dreams,
             "top_theme": None,
             "has_data": False,
-            "message": f"Au moins 2 rêves nécessaires pour détecter des thématiques",
+            "message": "Au moins 2 rêves nécessaires pour détecter des thématiques",
         }
 
     bertopic_model, bertopic_available = get_bertopic_model()
