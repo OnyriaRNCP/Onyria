@@ -1,10 +1,16 @@
+"""
+Module for different forms of the accounts app
+"""
+
+from datetime import date
 from django import forms
 from django.contrib.auth.forms import UserCreationForm, PasswordChangeForm
 from .models import CustomUser
-from datetime import date
 
 
 class RegisterForm(UserCreationForm):
+    """Registration form for first coming users"""
+
     email = forms.EmailField(
         label="Adresse mail",
         widget=forms.EmailInput(
@@ -46,6 +52,8 @@ class RegisterForm(UserCreationForm):
     )
 
     class Meta:
+        """meta class"""
+
         model = CustomUser
         fields = (
             "email",
@@ -57,6 +65,7 @@ class RegisterForm(UserCreationForm):
         )
 
     def clean_date_of_birth(self):
+        """verify that date of birth is well formated and correct"""
         dob = self.cleaned_data["date_of_birth"]
         today = date.today()
         if dob > today:
@@ -80,6 +89,8 @@ class RegisterForm(UserCreationForm):
 
 
 class LoginForm(forms.Form):
+    """login form for users with an existing account"""
+
     email = forms.EmailField(
         label="Adresse mail",
         widget=forms.EmailInput(
@@ -95,6 +106,8 @@ class LoginForm(forms.Form):
 
 
 class CustomPasswordChangeForm(PasswordChangeForm):
+    """form to change password"""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -118,6 +131,8 @@ class CustomPasswordChangeForm(PasswordChangeForm):
 
 
 class BioForm(forms.ModelForm):
+    """handles user biography"""
+
     class Meta:
         model = CustomUser
         fields = ["bio"]

@@ -5,6 +5,8 @@ from .test_forms import *
 from .test_views import *
 from .test_security import *
 
+import os
+
 # Métadonnées du package de tests
 __version__ = "1.0.0"
 __author__ = "Onyria Team"
@@ -212,9 +214,6 @@ def get_test_documentation():
         },
     }
 
-
-# Message de bienvenue (affiché une seule fois)
-import os
 
 if os.environ.get("DJANGO_SETTINGS_MODULE") and not os.environ.get(
     "ACCOUNTS_TESTS_INIT_DISPLAYED"

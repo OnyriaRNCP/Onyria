@@ -1,3 +1,8 @@
+"""
+This module regroups all the views (pages)
+of the django application
+"""
+
 import json
 import time
 import uuid
@@ -8,7 +13,6 @@ from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 from django.contrib.auth.decorators import login_required
-from django.conf import settings
 from .models import Dream
 from .utils import (
     analyze_emotions,
@@ -27,9 +31,6 @@ from .utils import (
     format_interpretation,
     transcribe_audio,
 )
-from .constants import EMOTION_LABELS, DREAM_ERROR_MESSAGE
-
-logger = logging.getLogger(__name__)
 
 # --- métriques avancées ---
 from .metrics.runtime import (
@@ -42,6 +43,9 @@ from .metrics.runtime import (
     metric_sse_abort,
 )
 
+from .constants import EMOTION_LABELS, DREAM_ERROR_MESSAGE
+
+logger = logging.getLogger(__name__)
 
 # ----- VUES PRINCIPALES ----- #
 
@@ -75,13 +79,16 @@ def dream_diary_view(request):
 @login_required
 @require_POST
 def delete_dream(request, dream_id):
+    """method to delete a dream from the UI & and database
+    of the user.
+    """
     try:
         dream = Dream.objects.get(id=dream_id, user=request.user)
         dream.delete()
         return JsonResponse({"success": True})
     except Dream.DoesNotExist:
         return JsonResponse({"error": "Rêve introuvable"}, status=404)
-    except Exception as e:
+    except Exception:
         return JsonResponse(
             {"error": "Erreur lors de la suppression"}, status=500
         )
@@ -129,7 +136,9 @@ def dream_recorder_view(request):
 @login_required
 @csrf_exempt
 def analyse_from_voice(request):
-    """Version SSE (Server-Sent Events) de analyse_from_voice pour affichage progressif des éléments"""
+    """Version SSE (Server-Sent Events) de
+    analyse_from_voice pour affichage progressif des éléments
+    """
 
     def event_stream():
         # ID de session SSE unique pour tracking
@@ -414,7 +423,8 @@ def analyse_from_voice(request):
 
 @login_required
 def dream_followup(request):
-    """Page de suivi des rêves avec statistiques et graphiques + filtres temporels"""
+    """Page de suivi des rêves avec statistiques
+    et graphiques + filtres temporels"""
 
     # Récupération des paramètres de filtre
     period = request.GET.get("period", "all")

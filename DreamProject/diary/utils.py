@@ -1,3 +1,8 @@
+"""
+Script that regroups all our utilitary functions
+and the logic pf our application
+"""
+
 import os
 import json
 import re
@@ -5,12 +10,17 @@ import math
 import time
 import tempfile
 import logging
-import httpx
 import random
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import unicodedata
 import concurrent.futures
 from typing import List
 from datetime import datetime, timedelta
+from collections import Counter, defaultdict
+
+from typing import Any, Mapping, Optional
+
+import httpx
 from django.utils import timezone
 from django.db.models import Count
 from django.db.models.functions import TruncDate
@@ -18,16 +28,13 @@ from django.conf import settings
 from dotenv import load_dotenv
 from groq import Groq
 from mistralai import Mistral
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from .metrics.runtime import (
     metric_ok,
     metric_fail,
     metric_fallback,
     metric_retry,
 )
-from collections import Counter, defaultdict
 from .models import Dream
-from typing import Any, Mapping, Optional
 from .constants import (
     EMOTION_LABELS,
     DREAM_TYPE_LABELS,
@@ -137,7 +144,7 @@ def get_bertopic_model():
             _bertopic_cache["available"] = True
 
         except ImportError as e:
-            logger.warning(f"BERTopic simplifié non disponible: {e}")
+            logger.warning("BERTopic simplifié non disponible: %s", e)
             _bertopic_cache["bertopic"] = None
             _bertopic_cache["available"] = False
 
@@ -1447,7 +1454,7 @@ def get_themes_stats_filtered(
             "total_dreams": total_dreams,
             "top_theme": None,
             "has_data": False,
-            "message": f"Au moins 2 rêves nécessaires pour détecter des thématiques",
+            "message": "Au moins 2 rêves nécessaires pour détecter des thématiques",
         }
 
     bertopic_model, bertopic_available = get_bertopic_model()
@@ -1591,6 +1598,10 @@ def get_themes_timeline_filtered(
 
 
 def analyze_recurring_themes(user, min_dreams=2, min_occurrence=2):
+    """
+    Method to analyze the recurring themes in a set of dreams from a single user
+    Uses the previously defined algorithm
+    """
 
     logger.info(f"Analyse thématiques récurrentes user {user.id}")
 
@@ -1737,6 +1748,10 @@ def get_date_filter_queryset(
 def get_dream_type_stats_filtered(
     user, period=None, start_date=None, end_date=None
 ):
+    """
+    Method returning the type of the dream (dream, nightmare)
+    """
+
     dreams = get_date_filter_queryset(user, period, start_date, end_date)
     total = dreams.count()
 
@@ -1763,6 +1778,10 @@ def get_dream_type_stats_filtered(
 def get_dream_type_timeline_filtered(
     user, period=None, start_date=None, end_date=None
 ):
+    """
+    Returns the type of the dream depending on the timeline
+    of the recording of said-dream
+    """
     dreams = (
         get_date_filter_queryset(user, period, start_date, end_date)
         .annotate(date_only=TruncDate("created_at"))
@@ -1796,6 +1815,10 @@ def get_dream_type_timeline_filtered(
 def get_emotions_stats_filtered(
     user, period=None, start_date=None, end_date=None
 ):
+    """
+    returns the emotions extracted from the dream with
+    the % of dominance of each emotion.
+    """
     dreams = get_date_filter_queryset(
         user, period, start_date, end_date
     ).exclude(dominant_emotion__isnull=True)
@@ -1821,6 +1844,10 @@ def get_emotions_stats_filtered(
 def get_emotions_timeline_filtered(
     user, period=None, start_date=None, end_date=None
 ):
+    """
+    Returns the statistics of the emotions extracted from the
+    dreams during a certain time period.
+    """
     dreams = (
         get_date_filter_queryset(user, period, start_date, end_date)
         .exclude(dominant_emotion__isnull=True)
@@ -1930,7 +1957,9 @@ def format_emotion_label(val: Any) -> str:
 
 
 def format_dream_type_label(val: Any) -> str:
-    """Ex: 'CAUCHEMAR', 'cauchemar', 'Cauchemàr' -> 'Cauchemar' (via DREAM_TYPE_LABELS si présent)"""
+    """Ex: 'CAUCHEMAR', 'cauchemar', 'Cauchemàr' -> 'Cauchemar'
+    (via DREAM_TYPE_LABELS si présent)
+    """
     return _normalize_label(val, DREAM_TYPE_LABELS)
 
 

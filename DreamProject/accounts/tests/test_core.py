@@ -227,7 +227,7 @@ class CoreFormsTest(TestCase):
             "date_of_birth": "1995-01-01",  # Ajout de la date de naissance requise
         }
 
-        print(f"\n=== TEST: test_register_form_valid_data ===")
+        print("\n=== TEST: test_register_form_valid_data ===")
         print(f"Form data: {form_data}")
 
         form = RegisterForm(data=form_data)
@@ -267,7 +267,7 @@ class CoreFormsTest(TestCase):
             # bio n'est pas dans le formulaire d'inscription
         }
 
-        print(f"\n=== TEST: test_register_form_with_optional_fields ===")
+        print("\n=== TEST: test_register_form_with_optional_fields ===")
         print(f"Form data: {form_data}")
 
         form = RegisterForm(data=form_data)
@@ -398,7 +398,7 @@ class CoreViewsTest(TestCase):
             "date_of_birth": "1995-06-15",  # Ajout de la date de naissance requise
         }
 
-        print(f"\n=== TEST: test_register_post_creates_user ===")
+        print("\n=== TEST: test_register_post_creates_user ===")
         print(f"POST data: {form_data}")
         print(f"User count before: {User.objects.count()}")
 

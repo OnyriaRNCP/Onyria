@@ -23,7 +23,6 @@ from ..models import Dream
 from ..utils import (
     softmax,
     get_profil_onirique_stats,
-    analyze_recurring_themes,
 )
 
 User = get_user_model()
@@ -636,7 +635,7 @@ Ces tests sont conçus pour être exécutés fréquemment pendant le développem
 
 3. COUVERTURE CRITIQUE :
    - Création de rêves ✓
-   - Propriétés JSON ✓  
+   - Propriétés JSON ✓
    - Vues principales ✓
    - Workflow d'analyse ✓
    - Gestion d'erreurs ✓
