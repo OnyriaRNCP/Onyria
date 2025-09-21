@@ -577,7 +577,7 @@ def _load_complete_jsonl_snapshot() -> Dict:
         "latency": latency_out,
         "pipeline_durations": pipeline_out,
         "fallbacks": fallback_data,
-        "retries": retry_data,  # <— agrégé depuis JSONL
+        "retries": retry_data,
         "sse_quality": sse_out,
         "errors": errors_data,
         "totals": {"ok": total_ok, "fail": total_fail, "all": total_all},
@@ -587,7 +587,7 @@ def _load_complete_jsonl_snapshot() -> Dict:
     }
 
 
-# NOUVELLES FONCTIONS D'API (identiques)
+# NOUVELLES FONCTIONS D'API
 def metric_pipeline_duration(step: str, duration_ms: int) -> None:
     """Enregistre la durée d'une étape du pipeline"""
     if not _COLLECT_ENABLED:

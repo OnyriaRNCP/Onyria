@@ -140,7 +140,7 @@ def analyse_from_voice(request):
 
         start_time = time.time()
         dream = None  # suivi du rêve provisoire pour pouvoir le supprimer en cas d'échec critique
-        aborted = False  # <--- flag ajouté
+        aborted = False  # <--- flag aboterd ajouté
         event_count = 0  # <--- compteur d'events SSE
 
         # Variables pour tracking des durées par étape
