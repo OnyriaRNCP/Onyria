@@ -8,6 +8,7 @@ class Dream(models.Model):
     """
     Schema de la table de reves
     """
+
     DREAM_TYPES = [
         ("rêve", "Rêve"),
         ("cauchemar", "Cauchemar"),

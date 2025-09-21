@@ -833,21 +833,18 @@ def calculate_business_metrics() -> Dict:
         },
     }
 
-    # 1. Récupérer le nombre de rêves complétés
-    if _APP_ENV == "dev" and _PERSIST_TRACES:
-        # DEV: depuis JSONL
-        dev_traces = get_dev_traces_summary()
-        completed_dreams = dev_traces.get("total", 0) if dev_traces else 0
-        data_source = "JSONL traces"
-        snapshot = _load_complete_jsonl_snapshot()
-        availability = snapshot.get("availability", {})
-    else:
-        # PROD: depuis session active
-        completed_dreams = _STORE.availability.get(
-            "mistral.interpretation", {}
-        ).get("ok", 0)
-        data_source = "session metrics"
-        availability = _STORE.availability
+   # 1. Récupérer le nombre de rêves complétés
+   if _APP_ENV == "dev" and _PERSIST_TRACES:
+       # DEV: depuis JSONL - charger d'abord le snapshot
+       snapshot = _load_complete_jsonl_snapshot()
+       completed_dreams = snapshot.get("availability", {}).get("mistral.interpretation", {}).get("ok", 0)
+       data_source = "JSONL traces"
+       availability = snapshot.get("availability", {})
+   else:
+       # PROD: depuis session active
+       completed_dreams = _STORE.availability.get("mistral.interpretation", {}).get("ok", 0)
+       data_source = "session metrics"
+       availability = _STORE.availability
 
     # 2. Helper pour récupérer les vrais appels réussis
     def get_ok(provider: str, op: str) -> int:

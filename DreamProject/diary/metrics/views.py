@@ -33,19 +33,8 @@ def ai_health_view(request):
     env = get_env_info()
     business_metrics = calculate_business_metrics()
 
-    # dreams_total : cohérent avec les données du snapshot
-    dreams_total = 0
-    if "_total_dreams" in snap:
-        # DEV: nombre depuis JSONL
-        dreams_total = snap["_total_dreams"]
-    else:
-        # PROD: depuis session
-        interp = snap.get("availability", {}).get("mistral.interpretation", {})
-        dreams_total = int(interp.get("ok", 0))
-
     data = {
         "environment": env,
-        "dreams_total": dreams_total,
         "started_at": _iso(snap.get("started_at")),
         "uptime_s": snap.get("uptime_s"),
         "availability": snap.get("availability"),
