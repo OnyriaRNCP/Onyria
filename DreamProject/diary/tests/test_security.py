@@ -18,14 +18,14 @@ from ..utils import analyze_recurring_themes
 
 User = get_user_model()
 
-TEST_USER_PASSWORD = os.environ.get('TEST_PASSWORD', 'django_test_secure_2024')
+TEST_USER_PASSWORD = os.environ.get("TEST_PASSWORD", "django_test_secure_2024")
 
 
 class SecurityTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
-            email='security@test.com',
-            username='secuser',
+            email="security@test.com",
+            username="secuser",
             password=TEST_USER_PASSWORD,
         )
         self.client = Client()
@@ -33,13 +33,13 @@ class SecurityTests(TestCase):
     def test_sql_injection_protection(self):
         """Test protection contre l'injection SQL"""
         self.client.login(
-            email='security@test.com', password=TEST_USER_PASSWORD
+            email="security@test.com", password=TEST_USER_PASSWORD
         )
 
         # Tentative d'injection dans les paramètres
         malicious_data = "'; DROP TABLE diary_dream; --"
         response = self.client.get(
-            reverse('dream_diary'), {'search': malicious_data}
+            reverse("dream_diary"), {"search": malicious_data}
         )
         # Ne doit pas planter et les données doivent être intactes
         self.assertEqual(response.status_code, 200)
@@ -55,7 +55,7 @@ class SecurityTests(TestCase):
         from ..models import Dream
 
         self.client.login(
-            email='security@test.com', password=TEST_USER_PASSWORD
+            email="security@test.com", password=TEST_USER_PASSWORD
         )
 
         #  PAYLOAD MALVEILLANT SPÉCIFIQUE
@@ -72,8 +72,8 @@ class SecurityTests(TestCase):
         )
 
         # Visiter la page où le rêve est affiché
-        response = self.client.get(reverse('dream_diary'))
-        content = response.content.decode('utf-8')
+        response = self.client.get(reverse("dream_diary"))
+        content = response.content.decode("utf-8")
 
         #  VÉRIFICATIONS SPÉCIFIQUES AU CONTENU MALVEILLANT
         # 1. L'identifiant du script malveillant ne doit PAS être présent tel quel
@@ -118,7 +118,7 @@ class SecurityTests(TestCase):
         # (pour s'assurer qu'on n'a pas cassé le template)
         legitimate_script_patterns = [
             r'document\.addEventListener\("DOMContentLoaded"',
-            r'const tiles = document\.querySelectorAll',
+            r"const tiles = document\.querySelectorAll",
         ]
 
         legitimate_found = any(
@@ -135,8 +135,8 @@ class SecurityTests(TestCase):
     def test_unauthorized_access(self):
         """Test accès non autorisé aux données d'autres utilisateurs"""
         other_user = User.objects.create_user(
-            email='other@test.com',
-            username='otheruser',
+            email="other@test.com",
+            username="otheruser",
             password=TEST_USER_PASSWORD,
         )
 
@@ -147,11 +147,11 @@ class SecurityTests(TestCase):
         )
 
         self.client.login(
-            email='security@test.com', password=TEST_USER_PASSWORD
+            email="security@test.com", password=TEST_USER_PASSWORD
         )
 
         # Tentative d'accès direct par ID
-        response = self.client.get(f'/diary/dream/{other_dream.id}/')
+        response = self.client.get(f"/diary/dream/{other_dream.id}/")
         self.assertEqual(response.status_code, 404)
 
     def test_xss_in_interpretation_field(self):
@@ -163,7 +163,7 @@ class SecurityTests(TestCase):
         from ..models import Dream
 
         self.client.login(
-            email='security@test.com', password=TEST_USER_PASSWORD
+            email="security@test.com", password=TEST_USER_PASSWORD
         )
 
         # Créer un rêve avec interprétation malveillante
@@ -184,9 +184,9 @@ class SecurityTests(TestCase):
 
         # Tester la vue détail
         response = self.client.get(
-            reverse('dream_detail', kwargs={'dream_id': dream.id})
+            reverse("dream_detail", kwargs={"dream_id": dream.id})
         )
-        content = response.content.decode('utf-8')
+        content = response.content.decode("utf-8")
 
         # Vérifications
         self.assertNotIn(
@@ -206,18 +206,26 @@ class SecurityTests(TestCase):
         self.assertIn("Autre analyse", content)
 
         print(" Champ interprétation protégé contre XSS")
-        
-    @patch('diary.utils.analyze_themes_with_mistral')
+
+    @patch("diary.utils.get_themes_stats_filtered")
     def test_theme_analysis_xss_protection(self, mock_themes):
         """
         Test protection contre XSS dans l'analyse thématique.
         """
         # Mock pour éviter l'appel API et contrôler le retour
-        mock_themes.return_value = [
-            ("Vol dans le ciel", 5),  # Thème nettoyé sans balises HTML
-            ("Rêves d'évasion", 2)
-        ]
-        
+        mock_themes.return_value = {
+            "themes": {"Vol dans le ciel": {"count": 5, "percentage": 50.0}},
+            "total_dreams": 10,
+            "top_theme": {
+                "name": "Vol dans le ciel",
+                "count": 5,
+                "percentage": 50.0,
+            },
+            "has_data": True,
+            "method": "Catégories",
+            "message": "Thèmes trouvés",
+        }
+
         # Créer des rêves avec contenu potentiellement malveillant
         malicious_dreams = [
             "<script>alert('XSS')</script> Je volais dans le ciel",
@@ -239,31 +247,39 @@ class SecurityTests(TestCase):
         result = analyze_recurring_themes(self.user)
 
         self.assertIsInstance(result, dict)
-        self.assertIn('top_theme', result)
+        self.assertIn("top_theme", result)
 
         # Le thème ne doit pas contenir de balises HTML
-        theme = result['top_theme']
+        theme = result["top_theme"]
         dangerous_tags = [
-            '<script',
-            '<img',
-            '<iframe',
-            '<object',
-            'javascript:',
+            "<script",
+            "<img",
+            "<iframe",
+            "<object",
+            "javascript:",
         ]
         for tag in dangerous_tags:
             self.assertNotIn(tag, theme.lower())
 
-    @patch('diary.utils.analyze_themes_with_mistral')
+    @patch("diary.utils.get_themes_stats_filtered")
     def test_theme_analysis_sql_injection_protection(self, mock_themes):
         """
         Test protection contre injection SQL via contenu des rêves.
         """
         # Mock pour éviter l'appel API et retourner un résultat sûr
-        mock_themes.return_value = [
-            ("Rêves étranges", 4),
-            ("Situations oniriques", 2)
-        ]
-        
+        mock_themes.return_value = {
+            "themes": {"Rêves étranges": {"count": 4, "percentage": 40.0}},
+            "total_dreams": 10,
+            "top_theme": {
+                "name": "Rêves étranges",
+                "count": 4,
+                "percentage": 40.0,
+            },
+            "has_data": True,
+            "method": "BERTopic",
+            "message": "Thèmes trouvés",
+        }
+
         sql_injections = [
             "'; DROP TABLE diary_dream; --",
             "UNION SELECT * FROM auth_user",
@@ -285,12 +301,12 @@ class SecurityTests(TestCase):
         # Vérifier que les données sont intactes
         dream_count = Dream.objects.filter(user=self.user).count()
         self.assertEqual(dream_count, 4)
-        
+
         # Vérifier que le mock a été appelé
         mock_themes.assert_called_once()
-        
+
         # Vérifier que le résultat ne contient pas d'injection
-        theme = result['top_theme']
-        sql_keywords = ['DROP', 'UNION', 'SELECT', 'DELETE']
+        theme = result["top_theme"]
+        sql_keywords = ["DROP", "UNION", "SELECT", "DELETE"]
         for keyword in sql_keywords:
             self.assertNotIn(keyword, theme.upper())

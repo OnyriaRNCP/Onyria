@@ -99,21 +99,6 @@ jobs:
           echo "Statistiques générales..."
           flake8 DreamProject/diary/ --count --exit-zero --max-complexity=10 --statistics
 
-      - name: Run coverage analysis
-        working-directory: DreamProject
-        run: |
-          echo "Analyse de couverture..."
-          coverage run --source='diary' manage.py test diary.tests.test_models diary.tests.test_utils diary.tests.test_views
-          coverage report --show-missing
-          coverage html
-
-      - name: Upload coverage reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: DreamProject/COVERAGE/
-      
       - name: Test Summary
         if: always()
         run: |

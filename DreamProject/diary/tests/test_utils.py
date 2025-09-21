@@ -30,12 +30,12 @@ from ..utils import (
     get_dream_type_stats_filtered,
     get_dream_type_timeline_filtered,
     get_emotions_stats_filtered,
-    get_emotions_timeline_filtered
+    get_emotions_timeline_filtered,
 )
 
 User = get_user_model()
 
-TEST_USER_PASSWORD = os.environ.get('TEST_PASSWORD', 'django_test_secure_2024')
+TEST_USER_PASSWORD = os.environ.get("TEST_PASSWORD", "django_test_secure_2024")
 
 logger = logging.getLogger(__name__)
 
@@ -237,8 +237,8 @@ class ClassificationFunctionsTest(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            email='test_classification@example.com',
-            username='test_classification',
+            email="test_classification@example.com",
+            username="test_classification",
             password=TEST_USER_PASSWORD,
         )
 
@@ -255,7 +255,7 @@ class ClassificationFunctionsTest(TestCase):
         }
 
         with patch(
-            'builtins.open', mock_open(read_data=json.dumps(reference_data))
+            "builtins.open", mock_open(read_data=json.dumps(reference_data))
         ):
             # Rêve avec émotions majoritairement positives
             positive_emotions = {
@@ -280,7 +280,7 @@ class ClassificationFunctionsTest(TestCase):
         }
 
         with patch(
-            'builtins.open', mock_open(read_data=json.dumps(reference_data))
+            "builtins.open", mock_open(read_data=json.dumps(reference_data))
         ):
             # Rêve avec émotions majoritairement négatives
             negative_emotions = {
@@ -305,7 +305,7 @@ class ClassificationFunctionsTest(TestCase):
         }
 
         with patch(
-            'builtins.open', mock_open(read_data=json.dumps(reference_data))
+            "builtins.open", mock_open(read_data=json.dumps(reference_data))
         ):
             # Émotions parfaitement équilibrées
             balanced_emotions = {
@@ -341,7 +341,7 @@ class ClassificationFunctionsTest(TestCase):
         }
 
         with patch(
-            'builtins.open', mock_open(read_data=json.dumps(reference_data))
+            "builtins.open", mock_open(read_data=json.dumps(reference_data))
         ):
             result = classify_dream({})
             # Comportement avec dict vide dépend de l'implémentation
@@ -360,7 +360,7 @@ class ClassificationFunctionsTest(TestCase):
         }
 
         with patch(
-            'builtins.open', mock_open(read_data=json.dumps(reference_data))
+            "builtins.open", mock_open(read_data=json.dumps(reference_data))
         ):
             unknown_emotions = {
                 "émotion_inconnue_1": 0.6,
@@ -384,12 +384,12 @@ class StatisticsAndProfilingTest(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            email='test_stats@example.com',
-            username='test_stats',
+            email="test_stats@example.com",
+            username="test_stats",
             password=TEST_USER_PASSWORD,
         )
-        
-    @patch('diary.utils.analyze_themes_with_mistral')
+
+    @patch("diary.utils.analyze_recurring_themes")
     def test_get_profil_onirique_stats_no_dreams(self, mock_themes):
         """
         Test des statistiques avec aucun rêve.
@@ -397,16 +397,21 @@ class StatisticsAndProfilingTest(TestCase):
         Objectif : Vérifier la gestion du cas "utilisateur nouveau"
         """
         stats = get_profil_onirique_stats(self.user)
-        mock_themes.return_value = None
+        mock_themes.return_value = {
+            "top_theme": "Pas encore de données",
+            "percentage": 0,
+            "total_dreams": 0,
+            "message": "Aucun rêve enregistré",
+        }
 
         # Vérifications pour utilisateur sans rêves
-        self.assertEqual(stats['statut_reveuse'], "silence onirique")
-        self.assertEqual(stats['pourcentage_reveuse'], 0)
-        self.assertEqual(stats['label_reveuse'], "rêves enregistrés")
-        self.assertEqual(stats['emotion_dominante'], "émotion endormie")
-        self.assertEqual(stats['emotion_dominante_percentage'], 0)
-        
-    @patch('diary.utils.analyze_themes_with_mistral')
+        self.assertEqual(stats["statut_reveuse"], "silence onirique")
+        self.assertEqual(stats["pourcentage_reveuse"], 0)
+        self.assertEqual(stats["label_reveuse"], "rêves enregistrés")
+        self.assertEqual(stats["emotion_dominante"], "émotion endormie")
+        self.assertEqual(stats["emotion_dominante_percentage"], 0)
+
+    @patch("diary.utils.analyze_recurring_themes")
     def test_get_profil_onirique_stats_single_dream(self, mock_themes):
         """
         Test des statistiques avec un seul rêve.
@@ -414,8 +419,13 @@ class StatisticsAndProfilingTest(TestCase):
         Objectif : Vérifier les calculs avec données minimales
         """
         # Mock pour l'analyse thématique (même avec 1 rêve, la fonction est appelée)
-        mock_themes.return_value = None  # Pas assez de rêves pour l'analyse
-        
+        mock_themes.return_value = {
+            "top_theme": "Pas encore de données",
+            "percentage": 0,
+            "total_dreams": 1,
+            "message": "1 rêve enregistré",
+        }
+
         Dream.objects.create(
             user=self.user,
             transcription="Premier rêve",
@@ -425,25 +435,29 @@ class StatisticsAndProfilingTest(TestCase):
 
         stats = get_profil_onirique_stats(self.user)
 
-        self.assertEqual(stats['statut_reveuse'], 'âme rêveuse')
-        self.assertEqual(stats['pourcentage_reveuse'], 100)
-        self.assertEqual(stats['label_reveuse'], 'rêves')
-        self.assertEqual(stats['emotion_dominante'], 'joie')
-        self.assertEqual(stats['emotion_dominante_percentage'], 100)
-        
-    @patch('diary.utils.analyze_themes_with_mistral')
-    def test_get_profil_onirique_stats_multiple_dreams_positive(self, mock_themes):
+        self.assertEqual(stats["statut_reveuse"], "âme rêveuse")
+        self.assertEqual(stats["pourcentage_reveuse"], 100)
+        self.assertEqual(stats["label_reveuse"], "rêves")
+        self.assertEqual(stats["emotion_dominante"], "joie")
+        self.assertEqual(stats["emotion_dominante_percentage"], 100)
+
+    @patch("diary.utils.analyze_recurring_themes")
+    def test_get_profil_onirique_stats_multiple_dreams_positive(
+        self, mock_themes
+    ):
         """
         Test des statistiques avec plusieurs rêves positifs.
 
         Objectif : Vérifier le calcul avec profil "rêveur"
         """
         # Mock de l'analyse thématique pour éviter l'appel API
-        mock_themes.return_value = [
-            ("Vol et liberté", 3),
-            ("Nature et paysages", 2)
-        ]
-        
+        mock_themes.return_value = {
+            "top_theme": "Vol et liberté",
+            "percentage": 75,
+            "total_dreams": 4,
+            "message": "2 thématiques trouvées",
+        }
+
         # Créer 3 rêves et 1 cauchemar
         dreams_data = [
             ("Rêve joyeux 1", "rêve", "joie"),
@@ -463,27 +477,31 @@ class StatisticsAndProfilingTest(TestCase):
         stats = get_profil_onirique_stats(self.user)
 
         # 3 rêves sur 4 = 75%
-        self.assertEqual(stats['statut_reveuse'], 'âme rêveuse')
-        self.assertEqual(stats['pourcentage_reveuse'], 75)
-        self.assertEqual(stats['label_reveuse'], 'rêves')
+        self.assertEqual(stats["statut_reveuse"], "âme rêveuse")
+        self.assertEqual(stats["pourcentage_reveuse"], 75)
+        self.assertEqual(stats["label_reveuse"], "rêves")
 
         # Joie apparaît 2 fois sur 4 = 50%
-        self.assertEqual(stats['emotion_dominante'], 'joie')
-        self.assertEqual(stats['emotion_dominante_percentage'], 50)
-        
-    @patch('diary.utils.analyze_themes_with_mistral')
-    def test_get_profil_onirique_stats_multiple_dreams_negative(self, mock_themes):
+        self.assertEqual(stats["emotion_dominante"], "joie")
+        self.assertEqual(stats["emotion_dominante_percentage"], 50)
+
+    @patch("diary.utils.analyze_recurring_themes")
+    def test_get_profil_onirique_stats_multiple_dreams_negative(
+        self, mock_themes
+    ):
         """
         Test des statistiques avec profil "cauchemardeur".
 
         Objectif : Vérifier le calcul pour un profil négatif
         """
         # Mock de l'analyse thématique
-        mock_themes.return_value = [
-            ("Peurs et angoisses", 3),
-            ("Situations stressantes", 2)
-        ]
-        
+        mock_themes.return_value = {
+            "top_theme": "Peurs et angoisses",
+            "percentage": 75,
+            "total_dreams": 4,
+            "message": "2 thématiques trouvées",
+        }
+
         # Créer plus de cauchemars que de rêves
         dreams_data = [
             ("Cauchemar 1", "cauchemar", "peur"),
@@ -503,15 +521,15 @@ class StatisticsAndProfilingTest(TestCase):
         stats = get_profil_onirique_stats(self.user)
 
         # 3 cauchemars sur 4 = 75%
-        self.assertEqual(stats['statut_reveuse'], 'en proie aux cauchemars')
-        self.assertEqual(stats['pourcentage_reveuse'], 75)
-        self.assertEqual(stats['label_reveuse'], 'cauchemars')
+        self.assertEqual(stats["statut_reveuse"], "en proie aux cauchemars")
+        self.assertEqual(stats["pourcentage_reveuse"], 75)
+        self.assertEqual(stats["label_reveuse"], "cauchemars")
 
         # Peur apparaît 2 fois sur 4 = 50%
-        self.assertEqual(stats['emotion_dominante'], 'peur')
-        self.assertEqual(stats['emotion_dominante_percentage'], 50)
+        self.assertEqual(stats["emotion_dominante"], "peur")
+        self.assertEqual(stats["emotion_dominante_percentage"], 50)
 
-    @patch('diary.utils.analyze_themes_with_mistral')
+    @patch("diary.utils.analyze_recurring_themes")
     def test_get_profil_onirique_stats_balanced_dreams(self, mock_themes):
         """
         Test des statistiques avec rêves équilibrés.
@@ -519,11 +537,12 @@ class StatisticsAndProfilingTest(TestCase):
         Objectif : Vérifier le comportement avec égalité 50/50
         """
         # Mock de l'analyse thématique
-        mock_themes.return_value = [
-            ("Thèmes variés", 2),
-            ("Situations mixtes", 2)
-        ]
-        
+        mock_themes.return_value = {
+            "top_theme": "Thèmes variés",
+            "percentage": 50,
+            "total_dreams": 4,
+            "message": "2 thématiques trouvées",
+        }
         # 2 rêves, 2 cauchemars
         dreams_data = [
             ("Rêve 1", "rêve", "joie"),
@@ -545,11 +564,11 @@ class StatisticsAndProfilingTest(TestCase):
         # Avec égalité, la logique dépend de l'implémentation
         # Mais doit être cohérente
         self.assertIn(
-            stats['statut_reveuse'], ['âme rêveuse', 'en proie aux cauchemars']
+            stats["statut_reveuse"], ["âme rêveuse", "en proie aux cauchemars"]
         )
-        self.assertEqual(stats['pourcentage_reveuse'], 50)
+        self.assertEqual(stats["pourcentage_reveuse"], 50)
 
-    @patch('diary.utils.analyze_themes_with_mistral')
+    @patch("diary.utils.analyze_recurring_themes")
     def test_get_profil_onirique_stats_large_dataset(self, mock_themes):
         """
         Test des statistiques avec un grand nombre de rêves.
@@ -557,12 +576,13 @@ class StatisticsAndProfilingTest(TestCase):
         Objectif : Vérifier la performance et précision avec beaucoup de données
         """
         # Mock de l'analyse thématique
-        mock_themes.return_value = [
-            ("Thème principal", 20),
-            ("Thème secondaire", 15),
-            ("Thème tertiaire", 10)
-        ]
-        
+        mock_themes.return_value = {
+            "top_theme": "Vol et liberté",
+            "percentage": 75,
+            "total_dreams": 4,
+            "message": "Thématiques trouvées",
+        }
+
         # Créer 100 rêves avec distribution connue
         emotions = ["joie", "tristesse", "peur", "colère", "surprise"]
 
@@ -577,15 +597,15 @@ class StatisticsAndProfilingTest(TestCase):
         stats = get_profil_onirique_stats(self.user)
 
         # Vérifications générales
-        self.assertIsInstance(stats['pourcentage_reveuse'], int)
-        self.assertIsInstance(stats['emotion_dominante_percentage'], int)
+        self.assertIsInstance(stats["pourcentage_reveuse"], int)
+        self.assertIsInstance(stats["emotion_dominante_percentage"], int)
         self.assertIn(
-            stats['statut_reveuse'], ['âme rêveuse', 'en proie aux cauchemars']
+            stats["statut_reveuse"], ["âme rêveuse", "en proie aux cauchemars"]
         )
 
         # Avec 66% de rêves (100 - 33 cauchemars), doit être "âme rêveuse"
-        self.assertEqual(stats['statut_reveuse'], 'âme rêveuse')
-        self.assertEqual(stats['pourcentage_reveuse'], 66)
+        self.assertEqual(stats["statut_reveuse"], "âme rêveuse")
+        self.assertEqual(stats["pourcentage_reveuse"], 66)
 
 
 class ValidationAndDataFixingTest(TestCase):
@@ -663,6 +683,7 @@ class ValidationAndDataFixingTest(TestCase):
         result = validate_and_fix_interpretation(None)
         self.assertIsNone(result)
 
+
 class UtilityFunctionsTest(TestCase):
     """
     Tests des fonctions utilitaires diverses.
@@ -673,22 +694,22 @@ class UtilityFunctionsTest(TestCase):
     - Fonctions d'aide diverses
     """
 
-    @patch('builtins.open', mock_open(read_data="Test file content"))
+    @patch("builtins.open", mock_open(read_data="Test file content"))
     def test_read_file_function(self):
         """
         Test de la fonction read_file.
 
         Objectif : Vérifier la lecture correcte des fichiers de prompt
         """
-        with patch('os.path.join') as mock_join:
-            mock_join.return_value = '/fake/path/test.txt'
+        with patch("os.path.join") as mock_join:
+            mock_join.return_value = "/fake/path/test.txt"
 
             content = read_file("test.txt")
 
             self.assertEqual(content, "Test file content")
             mock_join.assert_called_once()
 
-    @patch('builtins.open', side_effect=FileNotFoundError("File not found"))
+    @patch("builtins.open", side_effect=FileNotFoundError("File not found"))
     def test_read_file_function_file_not_found(self, mock_open):
         """
         Test de la fonction read_file avec fichier inexistant.
@@ -705,17 +726,17 @@ class UtilityFunctionsTest(TestCase):
         Objectif : Vérifier le bon usage de collections.Counter
         """
         # Simuler des émotions dominantes
-        emotions = ['joie', 'joie', 'tristesse', 'joie', 'peur']
+        emotions = ["joie", "joie", "tristesse", "joie", "peur"]
         emotion_counts = Counter(emotions)
 
         # Vérifications
-        self.assertEqual(emotion_counts['joie'], 3)
-        self.assertEqual(emotion_counts['tristesse'], 1)
-        self.assertEqual(emotion_counts['peur'], 1)
+        self.assertEqual(emotion_counts["joie"], 3)
+        self.assertEqual(emotion_counts["tristesse"], 1)
+        self.assertEqual(emotion_counts["peur"], 1)
 
         # Test most_common
         most_common = emotion_counts.most_common(1)
-        self.assertEqual(most_common[0][0], 'joie')
+        self.assertEqual(most_common[0][0], "joie")
         self.assertEqual(most_common[0][1], 3)
 
     def test_mathematical_edge_cases(self):
@@ -746,8 +767,8 @@ class DashboardFunctionsTest(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            email='dashboard@example.com',
-            username='dashboard_user',
+            email="dashboard@example.com",
+            username="dashboard_user",
             password=TEST_USER_PASSWORD,
         )
         self.dreams_data = self._create_test_dreams()
@@ -824,13 +845,13 @@ class DashboardFunctionsTest(TestCase):
             "[TEST] Validation calcul stats globales - tous rêves inclus"
         )
 
-        stats = get_dream_type_stats_filtered(self.user, period='all')
+        stats = get_dream_type_stats_filtered(self.user, period="all")
 
         # Vérifications de base
         logger.info(
             f"[RESULT] Stats globales: {stats['total']} total | {stats['counts']} | {stats['percentages']}"
         )
-        self.assertEqual(stats['total'], 10)  # 5 + 3 + 2
+        self.assertEqual(stats["total"], 10)  # 5 + 3 + 2
 
         # Compter les types manuellement
         expected_reves = 6  # 3 récents + 3 anciens
@@ -839,12 +860,12 @@ class DashboardFunctionsTest(TestCase):
         logger.info(
             f"[VERIFY] Attendu: {expected_reves} rêves, {expected_cauchemars} cauchemars"
         )
-        self.assertEqual(stats['counts']['rêve'], expected_reves)
-        self.assertEqual(stats['counts']['cauchemar'], expected_cauchemars)
+        self.assertEqual(stats["counts"]["rêve"], expected_reves)
+        self.assertEqual(stats["counts"]["cauchemar"], expected_cauchemars)
 
         # Vérifier les pourcentages
-        self.assertEqual(stats['percentages']['rêve'], 60.0)
-        self.assertEqual(stats['percentages']['cauchemar'], 40.0)
+        self.assertEqual(stats["percentages"]["rêve"], 60.0)
+        self.assertEqual(stats["percentages"]["cauchemar"], 40.0)
         logger.info(
             "[PASS] Stats globales correctes: 60% rêves, 40% cauchemars"
         )
@@ -853,16 +874,16 @@ class DashboardFunctionsTest(TestCase):
         """Test des stats avec filtre 30 derniers jours"""
         logger.info("[TEST] Validation filtre temporel - 30 derniers jours")
 
-        stats = get_dream_type_stats_filtered(self.user, period='month')
+        stats = get_dream_type_stats_filtered(self.user, period="month")
 
         # Seulement les 5 rêves récents (derniers 15 jours)
         logger.info(
             f"[RESULT] Stats 30j: {stats['total']} total | rêves: {stats['counts']['rêve']} | cauchemars: {stats['counts']['cauchemar']}"
         )
-        self.assertEqual(stats['total'], 5)
-        self.assertEqual(stats['counts']['rêve'], 3)
-        self.assertEqual(stats['counts']['cauchemar'], 2)
-        self.assertEqual(stats['percentages']['rêve'], 60.0)
+        self.assertEqual(stats["total"], 5)
+        self.assertEqual(stats["counts"]["rêve"], 3)
+        self.assertEqual(stats["counts"]["cauchemar"], 2)
+        self.assertEqual(stats["percentages"]["rêve"], 60.0)
         logger.info(
             "[PASS] Filtre 30j exclut correctement rêves anciens et très anciens"
         )
@@ -871,16 +892,16 @@ class DashboardFunctionsTest(TestCase):
         """Test des stats avec filtre 6 derniers mois"""
         logger.info("[TEST] Validation filtre temporel - 6 derniers mois")
 
-        stats = get_dream_type_stats_filtered(self.user, period='6months')
+        stats = get_dream_type_stats_filtered(self.user, period="6months")
 
         # Exclut les rêves de 8 mois (2 cauchemars)
         logger.info(
             f"[RESULT] Stats 6m: {stats['total']} total | rêves: {stats['counts']['rêve']} | cauchemars: {stats['counts']['cauchemar']}"
         )
-        self.assertEqual(stats['total'], 8)  # 5 + 3
-        self.assertEqual(stats['counts']['rêve'], 6)
-        self.assertEqual(stats['counts']['cauchemar'], 2)
-        self.assertEqual(stats['percentages']['rêve'], 75.0)
+        self.assertEqual(stats["total"], 8)  # 5 + 3
+        self.assertEqual(stats["counts"]["rêve"], 6)
+        self.assertEqual(stats["counts"]["cauchemar"], 2)
+        self.assertEqual(stats["percentages"]["rêve"], 75.0)
         logger.info(
             "[PASS] Filtre 6m exclut les 2 cauchemars de 8 mois, garde le reste"
         )
@@ -896,15 +917,15 @@ class DashboardFunctionsTest(TestCase):
         logger.info(f"[INPUT] Plage personnalisée: {start_date} à {end_date}")
         stats = get_dream_type_stats_filtered(
             self.user,
-            start_date=start_date.strftime('%Y-%m-%d'),
-            end_date=end_date.strftime('%Y-%m-%d'),
+            start_date=start_date.strftime("%Y-%m-%d"),
+            end_date=end_date.strftime("%Y-%m-%d"),
         )
 
         # Doit inclure les 5 rêves récents
         logger.info(
             f"[RESULT] Stats dates custom: {stats['total']} rêves dans la plage"
         )
-        self.assertEqual(stats['total'], 5)
+        self.assertEqual(stats["total"], 5)
         logger.info(
             "[PASS] Dates personnalisées incluent seulement les rêves récents"
         )
@@ -920,23 +941,23 @@ class DashboardFunctionsTest(TestCase):
         logger.info(f"[INPUT] Période future: {start_date} à {end_date}")
         stats = get_dream_type_stats_filtered(
             self.user,
-            start_date=start_date.strftime('%Y-%m-%d'),
-            end_date=end_date.strftime('%Y-%m-%d'),
+            start_date=start_date.strftime("%Y-%m-%d"),
+            end_date=end_date.strftime("%Y-%m-%d"),
         )
 
         # Aucun rêve dans cette période
         logger.info(f"[RESULT] Stats période vide: {stats}")
-        self.assertEqual(stats['total'], 0)
-        self.assertEqual(stats['counts']['rêve'], 0)
-        self.assertEqual(stats['counts']['cauchemar'], 0)
-        self.assertEqual(stats['percentages']['rêve'], 0)
+        self.assertEqual(stats["total"], 0)
+        self.assertEqual(stats["counts"]["rêve"], 0)
+        self.assertEqual(stats["counts"]["cauchemar"], 0)
+        self.assertEqual(stats["percentages"]["rêve"], 0)
         logger.info("[PASS] Période sans données → structure vide cohérente")
 
     def test_get_dream_type_timeline_filtered(self):
         """Test de la timeline avec filtre"""
         logger.info("[TEST] Validation format timeline avec filtre temporel")
 
-        timeline = get_dream_type_timeline_filtered(self.user, period='month')
+        timeline = get_dream_type_timeline_filtered(self.user, period="month")
 
         # Vérifier le format de retour
         logger.info(f"[RESULT] Timeline générée: {len(timeline)} entrées")
@@ -946,16 +967,16 @@ class DashboardFunctionsTest(TestCase):
             logger.debug(
                 f"[TIMELINE] Jour {i+1}: {entry['date']} | rêves: {entry['rêve']} | cauchemars: {entry['cauchemar']}"
             )
-            self.assertIn('date', entry)
-            self.assertIn('rêve', entry)
-            self.assertIn('cauchemar', entry)
+            self.assertIn("date", entry)
+            self.assertIn("rêve", entry)
+            self.assertIn("cauchemar", entry)
 
             # Vérifier le format de date
-            self.assertRegex(entry['date'], r'\d{4}-\d{2}-\d{2}')
+            self.assertRegex(entry["date"], r"\d{4}-\d{2}-\d{2}")
 
             # Les valeurs doivent être des entiers
-            self.assertIsInstance(entry['rêve'], int)
-            self.assertIsInstance(entry['cauchemar'], int)
+            self.assertIsInstance(entry["rêve"], int)
+            self.assertIsInstance(entry["cauchemar"], int)
 
         logger.info(
             "[PASS] Timeline: format correct, dates valides, types entiers"
@@ -965,7 +986,7 @@ class DashboardFunctionsTest(TestCase):
         """Test des stats d'émotions"""
         logger.info("[TEST] Validation calcul répartition émotions")
 
-        stats = get_emotions_stats_filtered(self.user, period='all')
+        stats = get_emotions_stats_filtered(self.user, period="all")
 
         # Vérifications de base
         logger.info(
@@ -975,14 +996,14 @@ class DashboardFunctionsTest(TestCase):
             f"[RESULT] Répartition: {stats['counts']} | {stats['percentages']}"
         )
 
-        self.assertEqual(stats['total'], 10)
-        self.assertIn('joie', stats['counts'])
-        self.assertIn('peur', stats['counts'])
-        self.assertIn('sérénité', stats['counts'])
-        self.assertIn('anxiété', stats['counts'])
+        self.assertEqual(stats["total"], 10)
+        self.assertIn("joie", stats["counts"])
+        self.assertIn("peur", stats["counts"])
+        self.assertIn("sérénité", stats["counts"])
+        self.assertIn("anxiété", stats["counts"])
 
         # Vérifier les pourcentages
-        total_percentage = sum(stats['percentages'].values())
+        total_percentage = sum(stats["percentages"].values())
         logger.info(f"[VERIFY] Total pourcentages: {total_percentage}%")
         self.assertAlmostEqual(total_percentage, 100.0, places=1)
         logger.info("[PASS] 4 émotions distinctes, pourcentages = 100%")
@@ -992,23 +1013,23 @@ class DashboardFunctionsTest(TestCase):
         logger.info("[TEST] Validation filtrage temporel des émotions")
 
         # Stats sur 30 jours (seulement joie et peur)
-        stats_month = get_emotions_stats_filtered(self.user, period='month')
+        stats_month = get_emotions_stats_filtered(self.user, period="month")
         logger.info(
             f"[RESULT] Émotions 30j: {set(stats_month['counts'].keys())} | total: {stats_month['total']}"
         )
 
-        self.assertEqual(stats_month['total'], 5)
-        self.assertEqual(set(stats_month['counts'].keys()), {'joie', 'peur'})
+        self.assertEqual(stats_month["total"], 5)
+        self.assertEqual(set(stats_month["counts"].keys()), {"joie", "peur"})
 
         # Stats sur 6 mois (joie, peur, sérénité)
-        stats_6m = get_emotions_stats_filtered(self.user, period='6months')
+        stats_6m = get_emotions_stats_filtered(self.user, period="6months")
         logger.info(
             f"[RESULT] Émotions 6m: {set(stats_6m['counts'].keys())} | total: {stats_6m['total']}"
         )
 
-        self.assertEqual(stats_6m['total'], 8)
+        self.assertEqual(stats_6m["total"], 8)
         self.assertEqual(
-            set(stats_6m['counts'].keys()), {'joie', 'peur', 'sérénité'}
+            set(stats_6m["counts"].keys()), {"joie", "peur", "sérénité"}
         )
         logger.info(
             "[PASS] Filtres temporels modifient correctement la palette émotionnelle"
@@ -1021,7 +1042,7 @@ class DashboardFunctionsTest(TestCase):
         )
 
         timeline, emotions_list = get_emotions_timeline_filtered(
-            self.user, period='all'
+            self.user, period="all"
         )
 
         # Vérifier le format de retour
@@ -1032,12 +1053,12 @@ class DashboardFunctionsTest(TestCase):
         self.assertIsInstance(emotions_list, list)
 
         # Vérifier les émotions détectées
-        expected_emotions = {'joie', 'peur', 'sérénité', 'anxiété'}
+        expected_emotions = {"joie", "peur", "sérénité", "anxiété"}
         self.assertEqual(set(emotions_list), expected_emotions)
 
         # Vérifier le format de la timeline
         for entry in timeline:
-            self.assertIn('date', entry)
+            self.assertIn("date", entry)
             # Chaque émotion doit être présente avec valeur >= 0
             for emotion in emotions_list:
                 self.assertIn(emotion, entry)
@@ -1055,10 +1076,10 @@ class DashboardFunctionsTest(TestCase):
         )
 
         timeline_month, emotions_month = get_emotions_timeline_filtered(
-            self.user, period='month'
+            self.user, period="month"
         )
         timeline_all, emotions_all = get_emotions_timeline_filtered(
-            self.user, period='all'
+            self.user, period="all"
         )
 
         logger.info(
@@ -1066,11 +1087,11 @@ class DashboardFunctionsTest(TestCase):
         )
 
         # Sur 30 jours, seulement joie et peur
-        self.assertEqual(set(emotions_month), {'joie', 'peur'})
+        self.assertEqual(set(emotions_month), {"joie", "peur"})
 
         # Sur toute la période, toutes les émotions
         self.assertEqual(
-            set(emotions_all), {'joie', 'peur', 'sérénité', 'anxiété'}
+            set(emotions_all), {"joie", "peur", "sérénité", "anxiété"}
         )
 
         # La timeline complète doit avoir plus d'entrées
@@ -1085,26 +1106,26 @@ class DashboardFunctionsTest(TestCase):
 
         # Créer un utilisateur vide
         empty_user = User.objects.create_user(
-            email='empty@example.com',
-            username='empty_user',
+            email="empty@example.com",
+            username="empty_user",
             password=TEST_USER_PASSWORD,
         )
 
         # Stats de types
-        dream_stats = get_dream_type_stats_filtered(empty_user, period='all')
+        dream_stats = get_dream_type_stats_filtered(empty_user, period="all")
         logger.info(f"[RESULT] Stats vides types: {dream_stats}")
-        self.assertEqual(dream_stats['total'], 0)
-        self.assertEqual(dream_stats['counts']['rêve'], 0)
+        self.assertEqual(dream_stats["total"], 0)
+        self.assertEqual(dream_stats["counts"]["rêve"], 0)
 
         # Stats d'émotions
-        emotion_stats = get_emotions_stats_filtered(empty_user, period='all')
+        emotion_stats = get_emotions_stats_filtered(empty_user, period="all")
         logger.info(f"[RESULT] Stats vides émotions: {emotion_stats}")
-        self.assertEqual(emotion_stats['total'], 0)
-        self.assertEqual(emotion_stats['counts'], {})
+        self.assertEqual(emotion_stats["total"], 0)
+        self.assertEqual(emotion_stats["counts"], {})
 
         # Timeline d'émotions
         timeline, emotions_list = get_emotions_timeline_filtered(
-            empty_user, period='all'
+            empty_user, period="all"
         )
         logger.info(
             f"[RESULT] Timeline vide: {len(timeline)} entrées, {len(emotions_list)} émotions"
@@ -1128,16 +1149,16 @@ class DashboardFunctionsTest(TestCase):
         # Appeler avec period ET dates personnalisées
         stats = get_dream_type_stats_filtered(
             self.user,
-            period='all',  # Ceci devrait être ignoré
-            start_date=start_date.strftime('%Y-%m-%d'),
-            end_date=end_date.strftime('%Y-%m-%d'),
+            period="all",  # Ceci devrait être ignoré
+            start_date=start_date.strftime("%Y-%m-%d"),
+            end_date=end_date.strftime("%Y-%m-%d"),
         )
 
         logger.info(
             f"[RESULT] Period='all' + dates custom → {stats['total']} rêves (attendu < 10)"
         )
         # Le résultat doit correspondre aux dates personnalisées, pas à la période 'all'
-        self.assertLess(stats['total'], 10)  # Moins que tous les rêves
+        self.assertLess(stats["total"], 10)  # Moins que tous les rêves
         logger.info(
             "[PASS] Dates personnalisées prioritaires sur period (logique métier OK)"
         )
@@ -1163,7 +1184,7 @@ class DashboardFunctionsTest(TestCase):
 
         # Mesurer le temps d'exécution
         start_time = time.time()
-        stats = get_dream_type_stats_filtered(self.user, period='all')
+        stats = get_dream_type_stats_filtered(self.user, period="all")
         execution_time = time.time() - start_time
 
         logger.info(
@@ -1171,5 +1192,5 @@ class DashboardFunctionsTest(TestCase):
         )
         # Doit rester rapide (< 0.5 secondes)
         self.assertLess(execution_time, 0.5)
-        self.assertEqual(stats['total'], 110)  # 10 + 100
+        self.assertEqual(stats["total"], 110)  # 10 + 100
         logger.info("[PASS] Performance acceptable même avec 110 rêves")

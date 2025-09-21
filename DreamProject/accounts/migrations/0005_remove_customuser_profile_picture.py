@@ -6,12 +6,12 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0004_customuser_profile_picture_base64'),
+        ("accounts", "0004_customuser_profile_picture_base64"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='customuser',
-            name='profile_picture',
+            model_name="customuser",
+            name="profile_picture",
         ),
     ]

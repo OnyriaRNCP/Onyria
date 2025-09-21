@@ -15,13 +15,38 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='Dream',
+            name="Dream",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('transcription', models.TextField()),
-                ('date', models.DateTimeField(verbose_name='date du reve enregistré')),
-                ('image_base64', models.TextField(help_text='Image du rêve encodée en base64', verbose_name='Image en Base64')),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("transcription", models.TextField()),
+                (
+                    "date",
+                    models.DateTimeField(
+                        verbose_name="date du reve enregistré"
+                    ),
+                ),
+                (
+                    "image_base64",
+                    models.TextField(
+                        help_text="Image du rêve encodée en base64",
+                        verbose_name="Image en Base64",
+                    ),
+                ),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
     ]

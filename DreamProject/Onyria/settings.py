@@ -16,16 +16,21 @@ import dj_database_url
 from dotenv import load_dotenv
 
 # Construction des chemins dans le projet
-BASE_DIR = Path(__file__).resolve().parent.parent          # .../DreamProject/
-ROOT_DIR = BASE_DIR.parent                                  # racine du dépôt
+BASE_DIR = Path(__file__).resolve().parent.parent  # .../DreamProject/
+ROOT_DIR = BASE_DIR.parent  # racine du dépôt
 
 # Charger le .env à la racine du dépôt (utile en local/prod)
 load_dotenv(ROOT_DIR / ".env")
 
 # Contexte tests/CI (GitHub Actions, etc.)
-IS_CI_OR_TEST = ("test" in sys.argv) or os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true"
+IS_CI_OR_TEST = (
+    ("test" in sys.argv)
+    or os.getenv("GITHUB_ACTIONS") == "true"
+    or os.getenv("CI") == "true"
+)
 
-if IS_CI_OR_TEST: os.environ["APP_ENV"] = "test"
+if IS_CI_OR_TEST:
+    os.environ["APP_ENV"] = "test"
 
 # Configuration sécurisée - SECRET_KEY obligatoire (fallback uniquement en CI)
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -33,16 +38,23 @@ if not SECRET_KEY:
     if IS_CI_OR_TEST:
         SECRET_KEY = "django-insecure-ci-test-only"
     else:
-        raise ValueError("SECRET_KEY doit être définie (variable d'environnement ou .env)")
+        raise ValueError(
+            "SECRET_KEY doit être définie (variable d'environnement ou .env)"
+        )
 
 # DEBUG désactivé par défaut, mais activé par défaut en CI/tests pour éviter les blocages de checks stricts
-DEBUG = os.getenv("DEBUG", "True" if IS_CI_OR_TEST else "False").lower() == "true"
+DEBUG = (
+    os.getenv("DEBUG", "True" if IS_CI_OR_TEST else "False").lower() == "true"
+)
 
 # Analyse des ALLOWED_HOSTS depuis l'env permettant virgules et/ou espaces, sans schémas
 _hosts_raw = os.getenv("ALLOWED_HOSTS", "")
 ALLOWED_HOSTS = [
     h.strip()
-    for h in _hosts_raw.replace("https://", "").replace("http://", "").replace(",", " ").split()
+    for h in _hosts_raw.replace("https://", "")
+    .replace("http://", "")
+    .replace(",", " ")
+    .split()
     if h.strip()
 ]
 
@@ -53,45 +65,65 @@ if not DEBUG and not ALLOWED_HOSTS and not IS_CI_OR_TEST:
 # Configuration IA et modèles - centralisée pour faciliter la maintenance
 AI_CONFIG = {
     # Modèles utilisés
-    'WHISPER_MODEL': 'whisper-large-v3-turbo',
-    'IMAGE_GENERATION_MODEL': 'mistral-medium-2505',
-    'EMOTION_MODEL': 'mistral-small-latest',
-    'INTERPRETATION_MODEL': 'mistral-large-latest',
-    'THEMES_MODEL': 'mistral-large-latest',
-    
+    "WHISPER_MODEL": "whisper-large-v3-turbo",
+    "IMAGE_GENERATION_MODEL": "mistral-medium-2505",
+    "EMOTION_MODEL": "mistral-small-latest",
+    "INTERPRETATION_MODEL": "mistral-large-latest",
+    "THEMES_MODEL": "mistral-large-latest",
     # Paramètres de retry globaux
-    'MAX_RETRIES': 3,
-    'BACKOFF_BASE': 1.5,
-    
+    "MAX_RETRIES": 3,
+    "BACKOFF_BASE": 1.5,
     # Timeouts et limites
-    'DEFAULT_TEMPERATURE': 0.0,
-    'API_TIMEOUT': 30,
-    
+    "DEFAULT_TEMPERATURE": 0.0,
+    "API_TIMEOUT": 30,
     # Hiérarchies de fallback par modèle
-    'FALLBACK_CHAINS': {
-        'mistral-large-latest': ['mistral-medium', 'mistral-small-latest', 'open-mistral-7b'],
-        'mistral-medium': ['mistral-small-latest', 'open-mistral-7b'],
-        'mistral-small-latest': ['open-mistral-7b'],
-        'open-mistral-7b': [],
+    "FALLBACK_CHAINS": {
+        "mistral-large-latest": [
+            "mistral-medium",
+            "mistral-small-latest",
+            "open-mistral-7b",
+        ],
+        "mistral-medium": ["mistral-small-latest", "open-mistral-7b"],
+        "mistral-small-latest": ["open-mistral-7b"],
+        "open-mistral-7b": [],
     },
-
-    'ERROR_REASON_KEYWORDS': {
+    # Codes erreur à relever
+    "ERROR_REASON_KEYWORDS": {
         "quota": ["insufficient_quota", "quota_exceeded", "quota"],
         "rate_limit": ["rate_limit", "too many requests", "429"],
         "timeout": ["timeout", "request timeout"],
-        "generate_failed": ["failed to generate response", "code 3000", "invalid_request_error"],
-        "auth": ["invalid_api_key", "unauthorized", "forbidden", "authentication failed"],
+        "generate_failed": [
+            "failed to generate response",
+            "code 3000",
+            "invalid_request_error",
+        ],
+        "auth": [
+            "invalid_api_key",
+            "unauthorized",
+            "forbidden",
+            "authentication failed",
+        ],
         "bad_request": ["bad request", "invalid", "malformed", "422"],
-        "server_error": ["internal server error", "server_error", "502", "503", "504"],
-        "connection": ["connection error", "network error", "dns", "ssl", "connection reset"],
+        "server_error": [
+            "internal server error",
+            "server_error",
+            "502",
+            "503",
+            "504",
+        ],
+        "connection": [
+            "connection error",
+            "network error",
+            "dns",
+            "ssl",
+            "connection reset",
+        ],
         "not_found": ["not found", "404"],
     },
-
-    # CODES ERREUR pour l'analyse Mistral
-    'ANALYZE_ERROR_STATUS': [408, 429, 500, 502, 503, 504],
-
+    # CODES ERREUR OK pour fallback/retry - analyse Mistral
+    "ANALYZE_ERROR_STATUS": [408, 429, 500, 502, 503, 504],
     # RÈGLES DE FALLBACK pour l'analyse Mistral
-    'ANALYZE_FALLBACK_KEYWORDS': [
+    "ANALYZE_FALLBACK_KEYWORDS": [
         "too many requests",
         "rate_limit",
         "service_unavailable",
@@ -103,25 +135,23 @@ AI_CONFIG = {
         "quota_exceeded",
         "model_not_found",
     ],
-    'FALLBACK_BASE_DELAY_S': 0.5,   # backoff avant modèle suivant
-    'FALLBACK_MAX_DELAY_S': 3.0,
-
- # RÈGLES DE RETRY pour l'analyse Mistral
-    'ANALYZE_RETRY_KEYWORDS': [
-        "too many requests",      
-        "rate_limit",             
+    "FALLBACK_BASE_DELAY_S": 0.5,  # backoff avant modèle suivant
+    "FALLBACK_MAX_DELAY_S": 3.0,
+    # RÈGLES DE RETRY pour l'analyse Mistral
+    "ANALYZE_RETRY_KEYWORDS": [
+        "too many requests",
+        "rate_limit",
         "temporarily unavailable",
         "timeout",
         "service unavailable",
         "capacity",
         "service tier capacity",
-        "failed to generate response",   
-        "code 3000",                     
-        "invalid_request_error",         
+        "failed to generate response",
+        "code 3000",
+        "invalid_request_error",
     ],
-
     # RÈGLES DE RETRY pour la transcription Groq
-    'TRANSCRIBE_RETRYABLE_KEYWORDS': [
+    "TRANSCRIBE_RETRYABLE_KEYWORDS": [
         "connection error",
         "connection reset",
         "connection aborted",
@@ -135,7 +165,7 @@ AI_CONFIG = {
         "503",
         "502",
         "429",
-    ]
+    ],
 }
 
 # Clés API depuis les variables d'environnement
@@ -143,51 +173,51 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 
 # Variable pour détecter le mode test
-TESTING = 'test' in sys.argv
+TESTING = "test" in sys.argv
 
 # Définition des applications
 INSTALLED_APPS = [
     "whitenoise.runserver_nostatic",
     "diary.apps.DiaryConfig",
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'widget_tweaks',
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "widget_tweaks",
     "accounts",
 ]
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
+    "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = 'Onyria.urls'
+ROOT_URLCONF = "Onyria.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'Onyria.wsgi.application'
+WSGI_APPLICATION = "Onyria.wsgi.application"
 
 # Base de données
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
@@ -195,14 +225,12 @@ WSGI_APPLICATION = 'Onyria.wsgi.application'
 # Configuration adaptative : utilise DATABASE_URL si présent, sinon SQLite local
 database_url = os.getenv("DATABASE_URL")
 if database_url:
-    DATABASES = {
-        'default': dj_database_url.parse(database_url)
-    }
+    DATABASES = {"default": dj_database_url.parse(database_url)}
 else:
     DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
         }
     }
 
@@ -211,23 +239,23 @@ else:
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
 
 # Internationalisation
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 
 USE_TZ = True
 
@@ -240,7 +268,7 @@ USE_TZ = True
 # Fichiers statiques (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = '/static/'
+STATIC_URL = "/static/"
 
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
@@ -249,69 +277,73 @@ if DEBUG:
     # Développement : pas de compression/hashing
     STORAGES = {
         "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"
+        },
     }
 else:
     # Production : WhiteNoise avec compression
     STORAGES = {
         "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-        "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
+        },
     }
 
 # Emplacement des sources d'assets (dossier 'static' à la racine du repo)
-STATICFILES_DIRS = [ BASE_DIR.parent / "static" ]
+STATICFILES_DIRS = [BASE_DIR.parent / "static"]
 
 # Type de clé primaire par défaut
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-AUTH_USER_MODEL = 'accounts.CustomUser'  # Modèle personnalisé
+AUTH_USER_MODEL = "accounts.CustomUser"  # Modèle personnalisé
 
-LOGIN_REDIRECT_URL = '/diary/record/'
-LOGOUT_REDIRECT_URL = 'login'
+LOGIN_REDIRECT_URL = "/diary/record/"
+LOGOUT_REDIRECT_URL = "login"
 
 # CONFIGURATION DES LOGS
 # Adapte automatiquement le niveau selon l'environnement :
 # - Développement (DEBUG=True) : logs DEBUG pour diagnostic détaillé
 # - Production (DEBUG=False) : logs INFO+ pour monitoring essentiel
 
-LOG_LEVEL = 'DEBUG' if DEBUG else 'INFO'
+LOG_LEVEL = "DEBUG" if DEBUG else "INFO"
 
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {module} {process:d} {thread:d} {message}",
+            "style": "{",
         },
-        'simple': {
-            'format': '{levelname} {name} {message}',
-            'style': '{',
-        },
-    },
-    'handlers': {
-        'console': {
-            'level': LOG_LEVEL,  # S'adapte selon DEBUG
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
+        "simple": {
+            "format": "{levelname} {name} {message}",
+            "style": "{",
         },
     },
-    'loggers': {
-        'diary': {
-            'handlers': ['console'],
-            'level': LOG_LEVEL,  # S'adapte selon DEBUG
-            'propagate': False,
-        },
-        'django': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
+    "handlers": {
+        "console": {
+            "level": LOG_LEVEL,  # S'adapte selon DEBUG
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
         },
     },
-    'root': {
-        'handlers': ['console'],
-        'level': 'INFO',
+    "loggers": {
+        "diary": {
+            "handlers": ["console"],
+            "level": LOG_LEVEL,  # S'adapte selon DEBUG
+            "propagate": False,
+        },
+        "django": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
     },
 }
