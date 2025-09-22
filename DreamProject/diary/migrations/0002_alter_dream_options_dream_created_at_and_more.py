@@ -7,68 +7,110 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('diary', '0001_initial'),
+        ("diary", "0001_initial"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='dream',
-            options={'ordering': ['-date'], 'verbose_name': 'Rêve', 'verbose_name_plural': 'Rêves'},
+            name="dream",
+            options={
+                "ordering": ["-date"],
+                "verbose_name": "Rêve",
+                "verbose_name_plural": "Rêves",
+            },
         ),
         migrations.AddField(
-            model_name='dream',
-            name='created_at',
-            field=models.DateTimeField(auto_now_add=True, default=django.utils.timezone.now),
+            model_name="dream",
+            name="created_at",
+            field=models.DateTimeField(
+                auto_now_add=True, default=django.utils.timezone.now
+            ),
             preserve_default=False,
         ),
         migrations.AddField(
-            model_name='dream',
-            name='dominant_emotion',
-            field=models.CharField(blank=True, max_length=50, null=True, verbose_name='Émotion dominante'),
+            model_name="dream",
+            name="dominant_emotion",
+            field=models.CharField(
+                blank=True,
+                max_length=50,
+                null=True,
+                verbose_name="Émotion dominante",
+            ),
         ),
         migrations.AddField(
-            model_name='dream',
-            name='dream_type',
-            field=models.CharField(choices=[('rêve', 'Rêve'), ('cauchemar', 'Cauchemar')], default='rêve', max_length=10, verbose_name='Type de rêve'),
+            model_name="dream",
+            name="dream_type",
+            field=models.CharField(
+                choices=[("rêve", "Rêve"), ("cauchemar", "Cauchemar")],
+                default="rêve",
+                max_length=10,
+                verbose_name="Type de rêve",
+            ),
         ),
         migrations.AddField(
-            model_name='dream',
-            name='emotions_json',
-            field=models.TextField(blank=True, help_text='Analyse des émotions au format JSON', null=True, verbose_name='Émotions (JSON)'),
+            model_name="dream",
+            name="emotions_json",
+            field=models.TextField(
+                blank=True,
+                help_text="Analyse des émotions au format JSON",
+                null=True,
+                verbose_name="Émotions (JSON)",
+            ),
         ),
         migrations.AddField(
-            model_name='dream',
-            name='image_prompt',
-            field=models.TextField(blank=True, help_text="Prompt utilisé pour générer l'image", null=True, verbose_name="Prompt de l'image"),
+            model_name="dream",
+            name="image_prompt",
+            field=models.TextField(
+                blank=True,
+                help_text="Prompt utilisé pour générer l'image",
+                null=True,
+                verbose_name="Prompt de l'image",
+            ),
         ),
         migrations.AddField(
-            model_name='dream',
-            name='interpretation_json',
-            field=models.TextField(blank=True, help_text='Interprétation du rêve au format JSON', null=True, verbose_name='Interprétation (JSON)'),
+            model_name="dream",
+            name="interpretation_json",
+            field=models.TextField(
+                blank=True,
+                help_text="Interprétation du rêve au format JSON",
+                null=True,
+                verbose_name="Interprétation (JSON)",
+            ),
         ),
         migrations.AddField(
-            model_name='dream',
-            name='is_analyzed',
-            field=models.BooleanField(default=False, help_text="Indique si l'analyse complète a été effectuée", verbose_name='Rêve analysé'),
+            model_name="dream",
+            name="is_analyzed",
+            field=models.BooleanField(
+                default=False,
+                help_text="Indique si l'analyse complète a été effectuée",
+                verbose_name="Rêve analysé",
+            ),
         ),
         migrations.AddField(
-            model_name='dream',
-            name='updated_at',
+            model_name="dream",
+            name="updated_at",
             field=models.DateTimeField(auto_now=True),
         ),
         migrations.AlterField(
-            model_name='dream',
-            name='date',
-            field=models.DateTimeField(auto_now_add=True, verbose_name='Date du rêve enregistré'),
+            model_name="dream",
+            name="date",
+            field=models.DateTimeField(
+                auto_now_add=True, verbose_name="Date du rêve enregistré"
+            ),
         ),
         migrations.AlterField(
-            model_name='dream',
-            name='image_base64',
-            field=models.TextField(blank=True, help_text='Image du rêve encodée en base64', null=True, verbose_name='Image en Base64'),
+            model_name="dream",
+            name="image_base64",
+            field=models.TextField(
+                blank=True,
+                help_text="Image du rêve encodée en base64",
+                null=True,
+                verbose_name="Image en Base64",
+            ),
         ),
         migrations.AlterField(
-            model_name='dream',
-            name='transcription',
-            field=models.TextField(verbose_name='Transcription du rêve'),
+            model_name="dream",
+            name="transcription",
+            field=models.TextField(verbose_name="Transcription du rêve"),
         ),
     ]

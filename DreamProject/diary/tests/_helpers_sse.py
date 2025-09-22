@@ -5,6 +5,7 @@ __all__ = ["read_sse_events", "sse_to_flat_payload"]
 
 logger = logging.getLogger(__name__)
 
+
 def read_sse_events(response):
     if hasattr(response, "streaming_content"):
         raw = b"".join(response.streaming_content).decode("utf-8")

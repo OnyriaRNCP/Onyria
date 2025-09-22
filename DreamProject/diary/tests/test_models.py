@@ -26,7 +26,7 @@ from ..models import Dream
 
 User = get_user_model()
 
-TEST_USER_PASSWORD = os.environ.get('TEST_PASSWORD', 'django_test_secure_2024')
+TEST_USER_PASSWORD = os.environ.get("TEST_PASSWORD", "django_test_secure_2024")
 
 
 class DreamModelTest(TestCase):
@@ -46,8 +46,8 @@ class DreamModelTest(TestCase):
         Crée un utilisateur de test qui sera utilisé pour tous les tests.
         """
         self.user = User.objects.create_user(
-            email='test@example.com',
-            username='testuser',
+            email="test@example.com",
+            username="testuser",
             password=TEST_USER_PASSWORD,
         )
 
@@ -78,7 +78,7 @@ class DreamModelTest(TestCase):
         self.assertIsNotNone(dream.updated_at)
 
         # Vérifications des valeurs par défaut
-        self.assertEqual(dream.dream_type, 'rêve')
+        self.assertEqual(dream.dream_type, "rêve")
         self.assertFalse(dream.is_analyzed)
         self.assertIsNone(dream.emotions_json)
         self.assertIsNone(dream.interpretation_json)
@@ -241,7 +241,7 @@ class DreamModelTest(TestCase):
         self.assertFalse(dream.has_image)
 
         # Avec image base64
-        dream.set_image_from_bytes(b"fake_image_content", format='PNG')
+        dream.set_image_from_bytes(b"fake_image_content", format="PNG")
         dream.save()
 
         self.assertTrue(dream.has_image)
@@ -312,7 +312,7 @@ class DreamModelTest(TestCase):
         self.assertIn(self.user.username, str_repr)
         self.assertIn("Un rêve pour tester la représentation string", str_repr)
         # Vérifier que la date est formatée
-        self.assertRegex(str_repr, r'\d{2}/\d{2}/\d{4} \d{2}:\d{2}')
+        self.assertRegex(str_repr, r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}")
 
     def test_dream_ordering(self):
         """
@@ -446,8 +446,8 @@ class DreamModelTest(TestCase):
             try:
                 with transaction.atomic():
                     thread_user = User.objects.create_user(
-                        email=f'thread_{thread_id}@concurrent.test',
-                        username=f'thread_user_{thread_id}_{int(time.time() * 1000)}',  # Ajouter timestamp pour unicité
+                        email=f"thread_{thread_id}@concurrent.test",
+                        username=f"thread_user_{thread_id}_{int(time.time() * 1000)}",  # Ajouter timestamp pour unicité
                         password=TEST_USER_PASSWORD,
                     )
                 for i in range(dreams_per_thread):
@@ -538,7 +538,7 @@ class DreamModelTest(TestCase):
             )
 
         # 5. Vérifier l'intégrité des données
-        all_db_dreams = Dream.objects.filter(user=self.user).order_by('id')
+        all_db_dreams = Dream.objects.filter(user=self.user).order_by("id")
 
         # Aucun rêve dupliqué par ID
         dream_ids = [dream.id for dream in all_db_dreams]
@@ -572,12 +572,12 @@ class DreamModelTest(TestCase):
         )
 
         # === LOGS DE DEBUG ===
-        print(f"\n=== Test de concurrence réussi ===")
+        print("\n=== Test de concurrence réussi ===")
         print(f"Threads: {num_threads}")
         print(f"Rêves par thread: {dreams_per_thread}")
         print(f"Total créé: {db_dreams_count}")
         print(f"Temps d'exécution: {execution_time:.2f}s")
-        print(f"Débit: {total_expected/execution_time:.1f} rêves/seconde")
+        print(f"Débit: {total_expected / execution_time:.1f} rêves/seconde")
 
     @unittest.skipIf(os.environ.get("DATABASE_URL"), "Test SQLite seulement.")
     def test_concurrent_dream_creation_fallback_sqlite(self):
@@ -627,10 +627,10 @@ class DreamModelTest(TestCase):
             f"Création séquentielle trop lente: {execution_time:.2f}s",
         )
 
-        print(f"\n=== Test séquentiel SQLite ===")
+        print("\n=== Test séquentiel SQLite ===")
         print(f"Rêves créés: {created_count}")
         print(f"Temps: {execution_time:.2f}s")
-        print(f"Débit: {num_dreams/execution_time:.1f} rêves/seconde")
+        print(f"Débit: {num_dreams / execution_time:.1f} rêves/seconde")
 
 
 class DreamModelImageBase64Test(TestCase):
@@ -647,8 +647,8 @@ class DreamModelImageBase64Test(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            email='test_images@example.com',
-            username='testuser_images',
+            email="test_images@example.com",
+            username="testuser_images",
             password=TEST_USER_PASSWORD,
         )
 
@@ -668,7 +668,7 @@ class DreamModelImageBase64Test(TestCase):
 
         # Avec image base64
         fake_image_bytes = b"fake_image_binary_data"
-        dream.set_image_from_bytes(fake_image_bytes, format='PNG')
+        dream.set_image_from_bytes(fake_image_bytes, format="PNG")
         dream.save()
 
         # Vérifications
@@ -687,15 +687,15 @@ class DreamModelImageBase64Test(TestCase):
         )
 
         # Test PNG
-        dream.set_image_from_bytes(b"fake_png", format='PNG')
+        dream.set_image_from_bytes(b"fake_png", format="PNG")
         self.assertTrue(dream.image_url.startswith("data:image/png;base64,"))
 
         # Test JPEG
-        dream.set_image_from_bytes(b"fake_jpeg", format='JPEG')
+        dream.set_image_from_bytes(b"fake_jpeg", format="JPEG")
         self.assertTrue(dream.image_url.startswith("data:image/jpeg;base64,"))
 
         # Test JPG (doit être converti en jpeg)
-        dream.set_image_from_bytes(b"fake_jpg", format='JPG')
+        dream.set_image_from_bytes(b"fake_jpg", format="JPG")
         self.assertTrue(dream.image_url.startswith("data:image/jpeg;base64,"))
 
     def test_image_base64_persistence(self):
@@ -774,10 +774,10 @@ class DreamModelImageBase64Test(TestCase):
         original_bytes = b"test_image_data_with_special_chars_\x00\x01\x02\xff"
 
         # Encoder
-        dream.set_image_from_bytes(original_bytes, format='PNG')
+        dream.set_image_from_bytes(original_bytes, format="PNG")
 
         # Vérifier que le base64 est correct
-        base64_part = dream.image_base64.split(',')[
+        base64_part = dream.image_base64.split(",")[
             1
         ]  # Retirer le préfixe data:
         decoded_bytes = base64.b64decode(base64_part)
@@ -795,11 +795,11 @@ class DreamModelImageBase64Test(TestCase):
         )
 
         test_cases = [
-            ('PNG', 'data:image/png;base64,'),
-            ('JPEG', 'data:image/jpeg;base64,'),
-            ('JPG', 'data:image/jpeg;base64,'),  # JPG doit devenir jpeg
-            ('GIF', 'data:image/gif;base64,'),
-            ('BMP', 'data:image/bmp;base64,'),
+            ("PNG", "data:image/png;base64,"),
+            ("JPEG", "data:image/jpeg;base64,"),
+            ("JPG", "data:image/jpeg;base64,"),  # JPG doit devenir jpeg
+            ("GIF", "data:image/gif;base64,"),
+            ("BMP", "data:image/bmp;base64,"),
         ]
 
         for format_name, expected_prefix in test_cases:
@@ -820,7 +820,7 @@ class DreamModelImageBase64Test(TestCase):
         # Bytes avec tous types de caractères spéciaux
         special_bytes = bytes(range(256))  # Tous les bytes possibles 0-255
 
-        dream.set_image_from_bytes(special_bytes, format='PNG')
+        dream.set_image_from_bytes(special_bytes, format="PNG")
         dream.save()
 
         # Vérifications
@@ -828,7 +828,7 @@ class DreamModelImageBase64Test(TestCase):
         self.assertIsNotNone(dream.image_url)
 
         # Vérifier que l'encodage fonctionne
-        base64_part = dream.image_base64.split(',')[1]
+        base64_part = dream.image_base64.split(",")[1]
         decoded = base64.b64decode(base64_part)
         self.assertEqual(decoded, special_bytes)
 
@@ -846,7 +846,7 @@ class DreamModelImageBase64Test(TestCase):
         large_bytes = b"performance_test_data" * 25000  # ~500KB
 
         start_time = time.time()
-        dream.set_image_from_bytes(large_bytes, format='JPEG')
+        dream.set_image_from_bytes(large_bytes, format="JPEG")
         dream.save()
         end_time = time.time()
 
@@ -875,7 +875,7 @@ class DreamModelImageBase64Test(TestCase):
         self.assertIsNone(dream.image_url)
 
         # Avec image
-        dream.set_image_from_bytes(b"test_consistency", format='PNG')
+        dream.set_image_from_bytes(b"test_consistency", format="PNG")
 
         # image_url doit retourner le base64 complet
         self.assertEqual(dream.image_url, dream.image_base64)
@@ -892,12 +892,12 @@ class DreamModelImageBase64Test(TestCase):
         )
 
         # Première image
-        dream.set_image_from_bytes(b"first_image", format='PNG')
+        dream.set_image_from_bytes(b"first_image", format="PNG")
         first_url = dream.image_url
         self.assertTrue(first_url.startswith("data:image/png;base64,"))
 
         # Deuxième image (remplace la première)
-        dream.set_image_from_bytes(b"second_image", format='JPEG')
+        dream.set_image_from_bytes(b"second_image", format="JPEG")
         second_url = dream.image_url
         self.assertTrue(second_url.startswith("data:image/jpeg;base64,"))
 
@@ -920,8 +920,8 @@ class DreamModelPerformanceTest(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            email='test_perf@example.com',
-            username='testuser_perf',
+            email="test_perf@example.com",
+            username="testuser_perf",
             password=TEST_USER_PASSWORD,
         )
 
@@ -1019,7 +1019,7 @@ class DreamModelPerformanceTest(TestCase):
 
         # Différentes requêtes courantes
         all_dreams = list(
-            Dream.objects.filter(user=self.user).order_by('-date')[:20]
+            Dream.objects.filter(user=self.user).order_by("-date")[:20]
         )
         analyzed_dreams = Dream.objects.filter(
             user=self.user, is_analyzed=True
@@ -1052,7 +1052,7 @@ class DreamModelPerformanceTest(TestCase):
             )
             # Ajouter une image base64 de taille moyenne (50KB)
             image_data = b"image_data_for_performance_test" * 1500  # ~50KB
-            dream.set_image_from_bytes(image_data, format='JPEG')
+            dream.set_image_from_bytes(image_data, format="JPEG")
             dream.save()
             dreams_with_images.append(dream)
 
@@ -1087,7 +1087,7 @@ class DreamModelPerformanceTest(TestCase):
             f"Requêtes trop lentes avec images base64: {execution_time:.2f}s",
         )
 
-        print(f"\n=== Performance avec images base64 ===")
+        print("\n=== Performance avec images base64 ===")
         print(f"Rêves avec images: {len(dreams_with_images_query)}")
         print(f"Rêves sans images: {len(dreams_without_images_query)}")
         print(f"Temps requêtes: {execution_time:.2f}s")
@@ -1107,7 +1107,7 @@ class DreamModelPerformanceTest(TestCase):
 
         # Test d'écriture
         start_time = time.time()
-        dream.set_image_from_bytes(large_image, format='PNG')
+        dream.set_image_from_bytes(large_image, format="PNG")
         dream.save()
         write_time = time.time() - start_time
 
@@ -1129,7 +1129,7 @@ class DreamModelPerformanceTest(TestCase):
         self.assertTrue(dream.has_image)
         self.assertIsNotNone(image_url)
 
-        print(f"\n=== Performance grosse image (1MB) ===")
+        print("\n=== Performance grosse image (1MB) ===")
         print(f"Écriture: {write_time:.2f}s")
         print(f"Lecture: {read_time:.2f}s")
 
@@ -1169,7 +1169,7 @@ Ce module teste complètement le modèle Dream et ses fonctionnalités :
 5. TESTS DE CONCURRENCE :
    - test_concurrent_dream_creation : Skippé sur SQLite, activé sur PostgreSQL
    - test_concurrent_dream_creation_fallback_sqlite : Version SQLite séquentielle
-   
+
 6. GESTION AUTOMATIQUE DE LA DB :
    - SQLite (dev) : Tests séquentiels, pas de problèmes de verrous
    - PostgreSQL (prod) : Tests de concurrence réels automatiquement activés
