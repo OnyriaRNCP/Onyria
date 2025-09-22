@@ -372,6 +372,8 @@
       recordBtn.style.display = "none";
       const title = document.querySelector("h1");
       if (title) title.style.display = "none";
+      status.style.display = "none";   // cacher l’alerte "trop court"
+      status.innerHTML = ""; 
       sectionTranscription.style.display = "none";
       sectionEmotionDream.style.display = "none";
       sectionInterpretation.style.display = "none";
