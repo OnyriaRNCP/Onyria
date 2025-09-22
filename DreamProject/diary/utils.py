@@ -398,14 +398,6 @@ def transcribe_audio(audio_data, language="fr"):
 
                 duration = time.time() - start_time
 
-                # Alertes sur contenu problématique
-                if len(transcription.text) < 10:
-                    logger.warning(
-                        f"Transcription très courte: {len(transcription.text)} caractères"
-                    )
-                if duration > 5:
-                    logger.warning(f"Transcription lente: {duration:.2f}s")
-
                 # VALIDATION DE LA LONGUEUR DE TRANSCRIPTION
                 is_valid, error_message = validate_transcription_length(
                     transcription.text
@@ -443,7 +435,10 @@ def transcribe_audio(audio_data, language="fr"):
                     _is_retryable_transcription_error(e)
                     and attempt < AI_CONFIG["MAX_ATTEMPTS"]
                 ):
-                    sleep_s = round(AI_CONFIG["BACKOFF_BASE"] ** attempt, 2)
+                    sleep_s = min(
+                        AI_CONFIG["BACKOFF_BASE"] ** attempt,
+                        AI_CONFIG["BACKOFF_MAX_DELAY_S"],
+                    ) + random.uniform(0, 0.3)
                     sleep_ms = int(sleep_s * 1000)
 
                     # Compter les retries et backoff
@@ -648,8 +643,8 @@ def safe_mistral_call(model, messages, operation="API call"):
             )
 
             if can_fallback:
-                base = AI_CONFIG.get("CHAT_FALLBACK_BASE_DELAY_S", 0.5)
-                maxd = AI_CONFIG.get("CHAT_FALLBACK_MAX_DELAY_S", 3.0)
+                base = AI_CONFIG.get("FALLBACK_BASE_DELAY_S", 0.5)
+                maxd = AI_CONFIG.get("FALLBACK_MAX_DELAY_S", 3.0)
                 wait = min(base * (2**attempt), maxd) + random.uniform(0, 0.3)
 
                 reason = _map_reason_from_msg(merged_msg, status_code)
@@ -909,6 +904,7 @@ def generate_image_from_text(user, prompt_text, dream_instance):
     system_instructions = read_file("instructions_image.txt")
     max_retries = AI_CONFIG["MAX_ATTEMPTS"]
     backoff_base = AI_CONFIG["BACKOFF_BASE"]
+    backoff_max = AI_CONFIG["BACKOFF_MAX_DELAY_S"]
     timeout_s = AI_CONFIG["API_TIMEOUT"]
 
     total_retry_count = 0
@@ -1015,9 +1011,8 @@ def generate_image_from_text(user, prompt_text, dream_instance):
 
             if is_retryable and attempt < max_retries:
                 sleep_s = min(
-                    backoff_base**attempt,
-                    AI_CONFIG.get("BACKOFF_MAX_DELAY_S", 5),
-                )
+                    backoff_base**attempt, backoff_max
+                ) + random.uniform(0, 0.3)
                 sleep_ms = int(sleep_s * 1000)
 
                 total_retry_count += 1

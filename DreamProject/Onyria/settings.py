@@ -73,6 +73,7 @@ AI_CONFIG = {
     # Paramètres de retry globaux
     "MAX_ATTEMPTS": 4,
     "BACKOFF_BASE": 1.5,
+    "BACKOFF_MAX_DELAY_S": 5,
     # Timeouts et limites
     "DEFAULT_TEMPERATURE": 0.0,
     "API_TIMEOUT": 20,
@@ -120,8 +121,6 @@ AI_CONFIG = {
         ],
         "not_found": ["not found", "404"],
     },
-    # CODES ERREUR OK pour fallback/retry - analyse Mistral
-    "ANALYZE_ERROR_STATUS": [408, 429, 500, 502, 503, 504],
     # RÈGLES DE RETRY pour la transcription Groq
     "TRANSCRIBE_RETRYABLE_KEYWORDS": [
         "connection error",
@@ -134,7 +133,12 @@ AI_CONFIG = {
         "ssl",
         "proxy",
         "rate limit",
+        "502", 
+        "503",
+        "504"
     ],
+    # CODES ERREUR OK pour fallback/retry - analyse Mistral
+    "ANALYZE_ERROR_STATUS": [408, 429, 500, 502, 503, 504],
     # RÈGLES DE FALLBACK pour l'analyse Mistral
     "ANALYZE_FALLBACK_KEYWORDS": [
         "too many requests",
