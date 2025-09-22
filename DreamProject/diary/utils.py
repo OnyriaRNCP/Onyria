@@ -379,10 +379,10 @@ def transcribe_audio(audio_data, language="fr"):
             temp_file_path = temp_file.name
 
         # Système de retry avec backoff exponentiel et configuration centralisée
-        for attempt in range(1, AI_CONFIG["MAX_RETRIES"] + 1):
+        for attempt in range(1, AI_CONFIG["MAX_ATTEMPTS"] + 1):
             try:
                 logger.info(
-                    f"Transcription tentative {attempt}/{AI_CONFIG['MAX_RETRIES']}"
+                    f"Transcription tentative {attempt}/{AI_CONFIG['MAX_ATTEMPTS']}"
                 )
 
                 with open(temp_file_path, "rb") as audio_file:
@@ -397,10 +397,6 @@ def transcribe_audio(audio_data, language="fr"):
                     )
 
                 duration = time.time() - start_time
-
-                metric_retry(
-                    "groq", "transcribe", total_retry_count, total_backoff_ms
-                )
 
                 # Alertes sur contenu problématique
                 if len(transcription.text) < 10:
@@ -418,6 +414,12 @@ def transcribe_audio(audio_data, language="fr"):
                     logger.warning(
                         f"Transcription trop courte rejetée: '{transcription.text[:50]}...'"
                     )
+                    metric_retry(
+                        "groq",
+                        "transcribe",
+                        total_retry_count,
+                        total_backoff_ms,
+                    )
                     metric_fail(
                         "groq",
                         "transcribe",
@@ -429,6 +431,9 @@ def transcribe_audio(audio_data, language="fr"):
                 logger.info(
                     f"Transcription valide - {len(transcription.text)} caractères en {duration:.2f}s"
                 )
+                metric_retry(
+                    "groq", "transcribe", total_retry_count, total_backoff_ms
+                )
                 metric_ok("groq", "transcribe", int(duration * 1000))
                 return transcription.text
 
@@ -436,7 +441,7 @@ def transcribe_audio(audio_data, language="fr"):
                 last_error = e
                 if (
                     _is_retryable_transcription_error(e)
-                    and attempt < AI_CONFIG["MAX_RETRIES"]
+                    and attempt < AI_CONFIG["MAX_ATTEMPTS"]
                 ):
                     sleep_s = round(AI_CONFIG["BACKOFF_BASE"] ** attempt, 2)
                     sleep_ms = int(sleep_s * 1000)
@@ -474,6 +479,9 @@ def transcribe_audio(audio_data, language="fr"):
                 logger.warning(
                     f"Transcription HTTPX trop courte rejetée: '{result[:50]}...'"
                 )
+                metric_retry(
+                    "groq", "transcribe", total_retry_count, total_backoff_ms
+                )
                 metric_fail(
                     "groq",
                     "transcribe",
@@ -482,6 +490,9 @@ def transcribe_audio(audio_data, language="fr"):
                 )
                 return {"error": "too_short", "message": error_message}
 
+            metric_retry(
+                "groq", "transcribe", total_retry_count, total_backoff_ms
+            )
             metric_ok("groq", "transcribe", int(duration * 1000))
             return result
         else:
@@ -491,6 +502,9 @@ def transcribe_audio(audio_data, language="fr"):
             else:
                 reason = "httpx_fallback_failed"
 
+            metric_retry(
+                "groq", "transcribe", total_retry_count, total_backoff_ms
+            )
             metric_fail(
                 "groq", "transcribe", int(duration * 1000), reason=reason
             )
@@ -893,15 +907,12 @@ def generate_image_from_text(user, prompt_text, dream_instance):
     start_time = time.time()
 
     system_instructions = read_file("instructions_image.txt")
-    max_retries = AI_CONFIG["MAX_RETRIES"]
+    max_retries = AI_CONFIG["MAX_ATTEMPTS"]
     backoff_base = AI_CONFIG["BACKOFF_BASE"]
     timeout_s = AI_CONFIG["API_TIMEOUT"]
 
     total_retry_count = 0
     total_backoff_ms = 0
-
-    # baseline: retry=0 (comme transcription)
-    metric_retry("mistral", operation, total_retry_count, total_backoff_ms)
 
     for attempt in range(1, max_retries + 1):
         try:
@@ -957,6 +968,10 @@ def generate_image_from_text(user, prompt_text, dream_instance):
                 f"Image générée avec succès en {duration:.2f}s (tentative {attempt})"
             )
 
+            # Enregistrer les retries une seule fois à la fin
+            metric_retry(
+                "mistral", operation, total_retry_count, total_backoff_ms
+            )
             metric_ok("mistral", operation, int(duration * 1000))
             return True
 
@@ -968,6 +983,9 @@ def generate_image_from_text(user, prompt_text, dream_instance):
             if attempt == max_retries:
                 logger.error(
                     f"[{operation.upper()}] Échec définitif après {max_retries} tentatives (timeout)"
+                )
+                metric_retry(
+                    "mistral", operation, total_retry_count, total_backoff_ms
                 )
                 metric_fail(
                     "mistral",
@@ -1004,9 +1022,6 @@ def generate_image_from_text(user, prompt_text, dream_instance):
 
                 total_retry_count += 1
                 total_backoff_ms += sleep_ms
-                metric_retry(
-                    "mistral", operation, total_retry_count, total_backoff_ms
-                )
 
                 logger.warning(
                     f"[{operation.upper()}] Erreur {reason} - retry dans {sleep_s:.2f}s "
@@ -1017,6 +1032,9 @@ def generate_image_from_text(user, prompt_text, dream_instance):
             else:
                 logger.error(
                     f"[{operation.upper()}] Erreur définitive {reason} sur {current_model}: {e}"
+                )
+                metric_retry(
+                    "mistral", operation, total_retry_count, total_backoff_ms
                 )
                 metric_fail(
                     "mistral", operation, int(duration * 1000), reason=reason

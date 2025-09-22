@@ -96,16 +96,16 @@ class _Store:
                 bucket["fallback_calls"] += attempt
 
     # Enregistrer retry (peut être appelé par requête ou par opération agrégée)
-    def record_retry(
-        self, provider: str, op: str, retry_count: int, backoff_ms: int
-    ) -> None:
+    def record_retry(self, provider: str, op: str, retry_count: int, backoff_ms: int) -> None:
         key = self._key(provider, op)
         with self._lock:
             bucket = self.retries.setdefault(
                 key, {"total_retries": 0, "backoff_total_ms": 0}
             )
+            # Additionner tous les retries
             bucket["total_retries"] += retry_count
             bucket["backoff_total_ms"] += backoff_ms
+
 
     # Enregistrer métriques SSE
     def record_sse_start(self, session_id: str) -> None:
@@ -398,9 +398,11 @@ def _load_complete_jsonl_snapshot() -> Dict:
                         bucket = retry_data.setdefault(
                             key, {"total_retries": 0, "backoff_total_ms": 0}
                         )
+                        # FIX: prendre le max au lieu d’additionner
                         bucket["total_retries"] += rc
                         bucket["backoff_total_ms"] += bo
                         continue
+
 
                     if not provider or not op or not status:
                         continue

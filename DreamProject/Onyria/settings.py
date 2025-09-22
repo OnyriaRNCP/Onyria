@@ -71,11 +71,11 @@ AI_CONFIG = {
     "INTERPRETATION_MODEL": "mistral-large-latest",
     "THEMES_MODEL": "mistral-large-latest",
     # Paramètres de retry globaux
-    "MAX_RETRIES": 3,
+    "MAX_ATTEMPTS": 4,
     "BACKOFF_BASE": 1.5,
     # Timeouts et limites
     "DEFAULT_TEMPERATURE": 0.0,
-    "API_TIMEOUT": 30,
+    "API_TIMEOUT": 20,
     # Hiérarchies de fallback par modèle
     "FALLBACK_CHAINS": {
         "mistral-large-latest": [
